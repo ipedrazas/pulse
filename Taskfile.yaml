@@ -1,0 +1,83 @@
+version: "3"
+
+vars:
+  AGENT_BIN: agent/bin/pulse-agent
+  API_BIN: api/bin/pulse-api
+  REGISTRY: docker.io/ipedrazas
+  IMAGE_AGENT: pulse-agent
+  IMAGE_API: pulse-api
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  proto:
+    desc: Generate Go code from proto definitions
+    sources:
+      - proto/monitor/v1/*.proto
+    cmds:
+      - buf lint
+      - buf generate
+
+  build:
+    desc: Build all binaries
+    deps: [build:agent, build:api]
+
+  build:agent:
+    desc: Build the agent binary
+    dir: agent
+    cmds:
+      - go build -o bin/pulse-agent ./cmd/agent
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  build:api:
+    desc: Build the API server binary
+    dir: api
+    cmds:
+      - go build -o bin/pulse-api ./cmd/api
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./agent/... ./api/... ./proto/...
+
+  lint:
+    desc: Run linters
+    cmds:
+      - buf lint
+      - go vet ./agent/... ./api/... ./proto/...
+
+  docker:
+    desc: Build all Docker images
+    deps: [docker:agent, docker:api]
+
+  docker:agent:
+    desc: Build the agent Docker image
+    cmds:
+      - docker build --platform linux/amd64,linux/arm64 -t {{.REGISTRY}}/{{.IMAGE_AGENT}} -f agent/Dockerfile . --push
+
+  docker:api:
+    desc: Build the API server Docker image
+    cmds:
+      - docker build --platform linux/amd64,linux/arm64 -t {{.REGISTRY}}/{{.IMAGE_API}} -f api/Dockerfile . --push
+
+  tidy:
+    desc: Run go mod tidy on all modules
+    cmds:
+      - cd proto && go mod tidy
+      - cd agent && go mod tidy
+      - cd api && go mod tidy
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -f {{.AGENT_BIN}} {{.API_BIN}}

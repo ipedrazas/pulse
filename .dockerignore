@@ -1,0 +1,7 @@
+.git
+.github
+*.md
+LICENSE
+data/
+**/bin/
+**/*_test.go

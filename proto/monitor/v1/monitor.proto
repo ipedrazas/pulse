@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package monitor.v1;
+
+option go_package = "github.com/ipedrazas/pulse/proto/monitor/v1;monitorv1";
+
+service MonitoringService {
+  rpc ReportHeartbeat(ReportHeartbeatRequest) returns (ReportHeartbeatResponse);
+  rpc SyncMetadata(SyncMetadataRequest) returns (SyncMetadataResponse);
+}
+
+message ReportHeartbeatRequest {
+  string container_id = 1;
+  string status = 2;
+  int64 uptime_seconds = 3;
+}
+
+message ReportHeartbeatResponse {}
+
+message SyncMetadataRequest {
+  string container_id = 1;
+  string node_name = 2;
+  string name = 3;
+  string image = 4;
+  map<string, string> envs = 5;
+  repeated MountInfo mounts = 6;
+}
+
+message SyncMetadataResponse {}
+
+message MountInfo {
+  string source = 1;
+  string destination = 2;
+  string mode = 3;
+}
