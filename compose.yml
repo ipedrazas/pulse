@@ -1,5 +1,7 @@
 services:
   api:
+    image: ipedrazas/pulse-api:latest
+    container_name: pulse-api
     build:
       context: .
       dockerfile: api/Dockerfile
@@ -34,6 +36,8 @@ services:
     restart: unless-stopped
 
   agent:
+    image: ipedrazas/pulse-agent:latest
+    container_name: pulse-agent
     build:
       context: .
       dockerfile: agent/Dockerfile

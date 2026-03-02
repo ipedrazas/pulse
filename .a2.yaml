@@ -7,9 +7,11 @@
 # Uncomment and modify as needed:
 #
 language:
-  explicit: [go]  # Override auto-detection
+  explicit: [go, typescript]  # Override auto-detection
   go:
-    source_dir: api
+    source_dir: [api, agent]
+  typescript:
+    source_dir: [ui]
 
 #
 files:
