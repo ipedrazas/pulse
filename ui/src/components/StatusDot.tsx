@@ -1,8 +1,15 @@
+import type { Staleness } from "../utils/containerStaleness";
 import { containerStatusColor } from "../utils/containerStatusColor";
 
-export function StatusDot({ status }: { status: string | null }) {
-  const color = containerStatusColor(status);
-  const animate = status === "running" ? "animate-pulse_dot" : "";
+interface StatusDotProps {
+  status: string | null;
+  staleness?: Staleness;
+}
+
+export function StatusDot({ status, staleness }: StatusDotProps) {
+  const color = containerStatusColor(status, staleness);
+  const animate =
+    status === "running" && (!staleness || staleness === "fresh") ? "animate-pulse_dot" : "";
 
   return (
     <span

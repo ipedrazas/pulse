@@ -1,4 +1,5 @@
 import type { ContainerStatus, NodeContainers } from "../types";
+import { getContainerStaleness } from "../utils/containerStaleness";
 import { ContainerRow } from "./ContainerRow";
 
 interface NodeCardProps {
@@ -7,8 +8,14 @@ interface NodeCardProps {
 }
 
 export function NodeCard({ node, onSelectContainer }: NodeCardProps) {
-  const running = node.containers.filter((c) => c.status === "running").length;
-  const total = node.containers.length;
+  const visibleContainers = node.containers.filter(
+    (c) => getContainerStaleness(c.last_seen) !== "expired",
+  );
+
+  if (visibleContainers.length === 0) return null;
+
+  const running = visibleContainers.filter((c) => c.status === "running").length;
+  const total = visibleContainers.length;
 
   return (
     <div className="rounded-xl border border-surface-border bg-surface-card overflow-hidden">
@@ -20,7 +27,7 @@ export function NodeCard({ node, onSelectContainer }: NodeCardProps) {
       </div>
 
       <div>
-        {node.containers.map((c) => (
+        {visibleContainers.map((c) => (
           <ContainerRow key={c.container_id} container={c} onSelect={onSelectContainer} />
         ))}
       </div>

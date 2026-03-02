@@ -1,4 +1,9 @@
-export function containerStatusColor(status: string | null): string {
+import type { Staleness } from "./containerStaleness";
+
+export function containerStatusColor(status: string | null, staleness?: Staleness): string {
+  if (staleness === "warning") return "bg-orange-500";
+  if (staleness === "critical") return "bg-red-500";
+
   switch (status) {
     case "running":
       return "bg-green-500";
@@ -16,7 +21,10 @@ export function containerStatusColor(status: string | null): string {
   }
 }
 
-export function containerStatusTextColor(status: string | null): string {
+export function containerStatusTextColor(status: string | null, staleness?: Staleness): string {
+  if (staleness === "warning") return "text-orange-400";
+  if (staleness === "critical") return "text-red-400";
+
   switch (status) {
     case "running":
       return "text-green-400";

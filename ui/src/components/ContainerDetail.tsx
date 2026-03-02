@@ -1,4 +1,5 @@
 import type { ContainerStatus } from "../types";
+import { getContainerStaleness } from "../utils/containerStaleness";
 import { containerStatusColor, containerStatusTextColor } from "../utils/containerStatusColor";
 import { formatLastSeen } from "../utils/formatLastSeen";
 import { formatUptime } from "../utils/formatUptime";
@@ -17,10 +18,18 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+const stalenessText: Record<string, string> = {
+  warning: "connection missing",
+  critical: "connection lost",
+};
+
 export function ContainerDetail({ container, onClose }: ContainerDetailProps) {
-  const statusText = container.status ?? "unknown";
-  const statusColor = containerStatusColor(container.status);
-  const statusTextColor = containerStatusTextColor(container.status);
+  const staleness = getContainerStaleness(container.last_seen);
+  const statusText = stalenessText[staleness] ?? container.status ?? "unknown";
+  const statusColor = containerStatusColor(container.status, staleness);
+  const statusTextColor = containerStatusTextColor(container.status, staleness);
+  const animate =
+    container.status === "running" && staleness === "fresh" ? "animate-pulse_dot" : "";
 
   return (
     <div
@@ -55,9 +64,7 @@ export function ContainerDetail({ container, onClose }: ContainerDetailProps) {
         <div className="px-5 py-4 space-y-5">
           {/* Status badge */}
           <div className="flex items-center gap-2">
-            <span
-              className={`inline-block h-3 w-3 rounded-full ${statusColor} ${container.status === "running" ? "animate-pulse_dot" : ""}`}
-            />
+            <span className={`inline-block h-3 w-3 rounded-full ${statusColor} ${animate}`} />
             <span className={`text-sm font-medium ${statusTextColor}`}>{statusText}</span>
           </div>
 

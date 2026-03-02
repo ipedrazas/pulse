@@ -8,6 +8,7 @@ import { Spinner } from "./components/Spinner";
 import { useHealth } from "./hooks/useHealth";
 import { useNodes } from "./hooks/useNodes";
 import type { ContainerStatus, NodeContainers } from "./types";
+import { getContainerStaleness } from "./utils/containerStaleness";
 
 function filterNodes(nodes: NodeContainers[], query: string): NodeContainers[] {
   if (!query) return nodes;
@@ -36,8 +37,15 @@ export default function App() {
   const healthy = health.data != null ? health.data.status === "healthy" : null;
   const allNodes = nodes.data ?? [];
 
-  const totalNodes = allNodes.length;
-  const totalContainers = allNodes.reduce((sum, n) => sum + n.containers.length, 0);
+  const visibleNodes = allNodes
+    .map((node) => ({
+      ...node,
+      containers: node.containers.filter((c) => getContainerStaleness(c.last_seen) !== "expired"),
+    }))
+    .filter((node) => node.containers.length > 0);
+
+  const totalNodes = visibleNodes.length;
+  const totalContainers = visibleNodes.reduce((sum, n) => sum + n.containers.length, 0);
 
   const filtered = useMemo(() => filterNodes(allNodes, search), [allNodes, search]);
 
