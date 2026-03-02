@@ -69,6 +69,38 @@ export function ContainerDetail({ container, onClose }: ContainerDetailProps) {
             <DetailRow label="Uptime" value={formatUptime(container.uptime_seconds)} />
             <DetailRow label="Last seen" value={formatLastSeen(container.last_seen)} />
           </div>
+
+          {/* Labels */}
+          {container.labels && Object.keys(container.labels).length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                Labels
+              </h3>
+              <div>
+                {Object.entries(container.labels)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([key, value]) => (
+                    <DetailRow key={key} label={key} value={value} />
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Environment Variables */}
+          {container.env_vars && Object.keys(container.env_vars).length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                Environment
+              </h3>
+              <div>
+                {Object.entries(container.env_vars)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([key, value]) => (
+                    <DetailRow key={key} label={key} value={value} />
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </div>

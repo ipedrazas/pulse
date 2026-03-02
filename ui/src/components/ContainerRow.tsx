@@ -22,7 +22,14 @@ export function ContainerRow({ container, onSelect }: ContainerRowProps) {
       <StatusDot status={container.status} />
 
       <div className="min-w-0 flex-1">
-        <span className="font-medium text-gray-200 truncate block">{container.name}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-gray-200 truncate">{container.name}</span>
+          {container.labels?.["com.docker.compose.project"] && (
+            <span className="text-[10px] font-medium text-gray-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5 shrink-0">
+              {container.labels["com.docker.compose.project"]}
+            </span>
+          )}
+        </div>
         <span className="font-mono text-xs text-gray-500 truncate block">
           {container.image_tag}
         </span>

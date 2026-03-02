@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -48,13 +49,15 @@ func (h *Handler) Healthz(c *gin.Context) {
 }
 
 type containerStatus struct {
-	ContainerID   string  `json:"container_id"`
-	NodeName      string  `json:"node_name"`
-	Name          string  `json:"name"`
-	ImageTag      string  `json:"image_tag"`
-	Status        *string `json:"status"`
-	UptimeSeconds *int64  `json:"uptime_seconds"`
-	LastSeen      *string `json:"last_seen"`
+	ContainerID   string            `json:"container_id"`
+	NodeName      string            `json:"node_name"`
+	Name          string            `json:"name"`
+	ImageTag      string            `json:"image_tag"`
+	Status        *string           `json:"status"`
+	UptimeSeconds *int64            `json:"uptime_seconds"`
+	LastSeen      *string           `json:"last_seen"`
+	Labels        map[string]string `json:"labels"`
+	EnvVars       map[string]string `json:"env_vars"`
 }
 
 const statusQuery = `
@@ -65,7 +68,9 @@ SELECT
   c.image_tag,
   h.status,
   h.uptime_seconds,
-  h.time::text AS last_seen
+  h.time::text AS last_seen,
+  c.labels,
+  c.env_vars
 FROM containers c
 LEFT JOIN LATERAL (
   SELECT status, uptime_seconds, time
@@ -86,10 +91,13 @@ func (h *Handler) GetStatus(c *gin.Context) {
 	results := []containerStatus{}
 	for rows.Next() {
 		var cs containerStatus
-		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen); err != nil {
+		var labelsJSON, envVarsJSON []byte
+		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen, &labelsJSON, &envVarsJSON); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		_ = json.Unmarshal(labelsJSON, &cs.Labels)
+		_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
 		results = append(results, cs)
 	}
 
@@ -102,10 +110,13 @@ func (h *Handler) GetContainerStatus(c *gin.Context) {
 	row := h.db.QueryRow(c.Request.Context(), statusQuery+" WHERE c.container_id = $1", containerID)
 
 	var cs containerStatus
-	if err := row.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen); err != nil {
+	var labelsJSON, envVarsJSON []byte
+	if err := row.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen, &labelsJSON, &envVarsJSON); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
 		return
 	}
+	_ = json.Unmarshal(labelsJSON, &cs.Labels)
+	_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
 
 	c.JSON(http.StatusOK, cs)
 }
@@ -127,10 +138,13 @@ func (h *Handler) GetNodes(c *gin.Context) {
 	var order []string
 	for rows.Next() {
 		var cs containerStatus
-		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen); err != nil {
+		var labelsJSON, envVarsJSON []byte
+		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen, &labelsJSON, &envVarsJSON); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		_ = json.Unmarshal(labelsJSON, &cs.Labels)
+		_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
 		if _, exists := grouped[cs.NodeName]; !exists {
 			order = append(order, cs.NodeName)
 		}
@@ -158,10 +172,13 @@ func (h *Handler) GetNode(c *gin.Context) {
 	containers := []containerStatus{}
 	for rows.Next() {
 		var cs containerStatus
-		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen); err != nil {
+		var labelsJSON, envVarsJSON []byte
+		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen, &labelsJSON, &envVarsJSON); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		_ = json.Unmarshal(labelsJSON, &cs.Labels)
+		_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
 		containers = append(containers, cs)
 	}
 

@@ -13,6 +13,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+func marshalOrEmpty(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
+}
+
 func init() {
 	gin.SetMode(gin.TestMode)
 }
@@ -69,6 +74,8 @@ func (r *mockRows) Scan(dest ...any) error {
 	*dest[4].(**string) = cs.Status
 	*dest[5].(**int64) = cs.UptimeSeconds
 	*dest[6].(**string) = cs.LastSeen
+	*dest[7].(*[]byte) = marshalOrEmpty(cs.Labels)
+	*dest[8].(*[]byte) = marshalOrEmpty(cs.EnvVars)
 	return nil
 }
 
@@ -98,6 +105,8 @@ func (r *mockRow) Scan(dest ...any) error {
 	*dest[4].(**string) = r.cs.Status
 	*dest[5].(**int64) = r.cs.UptimeSeconds
 	*dest[6].(**string) = r.cs.LastSeen
+	*dest[7].(*[]byte) = marshalOrEmpty(r.cs.Labels)
+	*dest[8].(*[]byte) = marshalOrEmpty(r.cs.EnvVars)
 	return nil
 }
 

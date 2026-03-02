@@ -16,6 +16,7 @@ type ContainerInfo struct {
 	Name          string
 	Image         string
 	Envs          map[string]string
+	Labels        map[string]string
 	Mounts        []MountInfo
 	Status        string
 	UptimeSeconds int64
@@ -72,6 +73,7 @@ func (p *Poller) inspect(ctx context.Context, c container.Summary) (ContainerInf
 	}
 
 	envs := parseEnvs(detail.Config.Env)
+	labels := detail.Config.Labels
 	mounts := parseMounts(detail.Mounts)
 
 	var uptime int64
@@ -88,6 +90,7 @@ func (p *Poller) inspect(ctx context.Context, c container.Summary) (ContainerInf
 		Name:          name,
 		Image:         detail.Config.Image,
 		Envs:          envs,
+		Labels:        labels,
 		Mounts:        mounts,
 		Status:        detail.State.Status,
 		UptimeSeconds: uptime,
@@ -114,6 +117,24 @@ func parseMounts(mounts []container.MountPoint) []MountInfo {
 		}
 	}
 	return result
+}
+
+// SortedMapString returns a deterministic string representation of a string map for hashing.
+func SortedMapString(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(m[k])
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // SortedEnvString returns a deterministic string representation of envs for hashing.

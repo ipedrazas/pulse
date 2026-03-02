@@ -120,6 +120,7 @@ func pollOnce(ctx context.Context, poller *docker.Poller, client *grpcclient.Cli
 				Image:       c.Image,
 				Envs:        c.Envs,
 				Mounts:      mounts,
+				Labels:      c.Labels,
 			}
 
 			if err := client.SyncMetadata(ctx, req); err != nil {

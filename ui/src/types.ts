@@ -6,6 +6,8 @@ export interface ContainerStatus {
   status: string | null;
   uptime_seconds: number | null;
   last_seen: string | null;
+  labels: Record<string, string> | null;
+  env_vars: Record<string, string> | null;
 }
 
 export interface NodeContainers {

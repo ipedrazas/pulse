@@ -46,18 +46,24 @@ func (s *MonitoringService) SyncMetadata(ctx context.Context, req *monitorv1.Syn
 		return nil, err
 	}
 
+	labelsJSON, err := json.Marshal(req.Labels)
+	if err != nil {
+		return nil, err
+	}
+
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO containers (container_id, node_name, name, image_tag, env_vars, mounts, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO containers (container_id, node_name, name, image_tag, env_vars, mounts, labels, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 ON CONFLICT (container_id) DO UPDATE SET
 		   node_name  = EXCLUDED.node_name,
 		   name       = EXCLUDED.name,
 		   image_tag  = EXCLUDED.image_tag,
 		   env_vars   = EXCLUDED.env_vars,
 		   mounts     = EXCLUDED.mounts,
+		   labels     = EXCLUDED.labels,
 		   updated_at = EXCLUDED.updated_at`,
 		req.ContainerId, req.NodeName, req.Name, req.Image,
-		envsJSON, mountsJSON, time.Now(),
+		envsJSON, mountsJSON, labelsJSON, time.Now(),
 	)
 	if err != nil {
 		slog.Error("failed to upsert metadata", "container_id", req.ContainerId, "error", err)

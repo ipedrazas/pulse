@@ -24,6 +24,7 @@ message SyncMetadataRequest {
   string image = 4;
   map<string, string> envs = 5;
   repeated MountInfo mounts = 6;
+  map<string, string> labels = 7;
 }
 
 message SyncMetadataResponse {}

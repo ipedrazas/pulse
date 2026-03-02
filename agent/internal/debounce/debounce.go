@@ -55,6 +55,7 @@ func computeHash(info docker.ContainerInfo) string {
 	h := sha256.New()
 	h.Write([]byte(info.Image))
 	h.Write([]byte(docker.SortedEnvString(info.Envs)))
+	h.Write([]byte(docker.SortedMapString(info.Labels)))
 	h.Write([]byte(mountsString(info.Mounts)))
 	return hex.EncodeToString(h.Sum(nil))
 }
