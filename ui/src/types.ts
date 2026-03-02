@@ -8,6 +8,7 @@ export interface ContainerStatus {
   last_seen: string | null;
   labels: Record<string, string> | null;
   env_vars: Record<string, string> | null;
+  compose_project: string;
 }
 
 export interface NodeContainers {

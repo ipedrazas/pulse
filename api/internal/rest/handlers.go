@@ -42,6 +42,28 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	auth.GET("/status/:container", h.GetContainerStatus)
 	auth.GET("/nodes", h.GetNodes)
 	auth.GET("/nodes/:node", h.GetNode)
+	auth.GET("/nodes/:node/stacks", h.GetNodeStacks)
+}
+
+// scannable is satisfied by both pgx.Rows (current row) and pgx.Row.
+type scannable interface {
+	Scan(dest ...any) error
+}
+
+func scanContainer(s scannable) (containerStatus, error) {
+	var cs containerStatus
+	var labelsJSON, envVarsJSON []byte
+	err := s.Scan(
+		&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag,
+		&cs.Status, &cs.UptimeSeconds, &cs.LastSeen,
+		&labelsJSON, &envVarsJSON, &cs.ComposeProject,
+	)
+	if err != nil {
+		return cs, err
+	}
+	_ = json.Unmarshal(labelsJSON, &cs.Labels)
+	_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
+	return cs, nil
 }
 
 func (h *Handler) Healthz(c *gin.Context) {
@@ -53,15 +75,16 @@ func (h *Handler) Healthz(c *gin.Context) {
 }
 
 type containerStatus struct {
-	ContainerID   string            `json:"container_id"`
-	NodeName      string            `json:"node_name"`
-	Name          string            `json:"name"`
-	ImageTag      string            `json:"image_tag"`
-	Status        *string           `json:"status"`
-	UptimeSeconds *int64            `json:"uptime_seconds"`
-	LastSeen      *string           `json:"last_seen"`
-	Labels        map[string]string `json:"labels"`
-	EnvVars       map[string]string `json:"env_vars"`
+	ContainerID    string            `json:"container_id"`
+	NodeName       string            `json:"node_name"`
+	Name           string            `json:"name"`
+	ImageTag       string            `json:"image_tag"`
+	Status         *string           `json:"status"`
+	UptimeSeconds  *int64            `json:"uptime_seconds"`
+	LastSeen       *string           `json:"last_seen"`
+	Labels         map[string]string `json:"labels"`
+	EnvVars        map[string]string `json:"env_vars"`
+	ComposeProject string            `json:"compose_project"`
 }
 
 const statusQuery = `
@@ -74,7 +97,8 @@ SELECT
   h.uptime_seconds,
   h.time::text AS last_seen,
   c.labels,
-  c.env_vars
+  c.env_vars,
+  c.compose_project
 FROM containers c
 LEFT JOIN LATERAL (
   SELECT status, uptime_seconds, time
@@ -94,14 +118,11 @@ func (h *Handler) GetStatus(c *gin.Context) {
 
 	results := []containerStatus{}
 	for rows.Next() {
-		var cs containerStatus
-		var labelsJSON, envVarsJSON []byte
-		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen, &labelsJSON, &envVarsJSON); err != nil {
+		cs, err := scanContainer(rows)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		_ = json.Unmarshal(labelsJSON, &cs.Labels)
-		_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
 		results = append(results, cs)
 	}
 
@@ -113,14 +134,11 @@ func (h *Handler) GetContainerStatus(c *gin.Context) {
 
 	row := h.db.QueryRow(c.Request.Context(), statusQuery+" WHERE c.container_id = $1", containerID)
 
-	var cs containerStatus
-	var labelsJSON, envVarsJSON []byte
-	if err := row.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen, &labelsJSON, &envVarsJSON); err != nil {
+	cs, err := scanContainer(row)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
 		return
 	}
-	_ = json.Unmarshal(labelsJSON, &cs.Labels)
-	_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
 
 	c.JSON(http.StatusOK, cs)
 }
@@ -141,14 +159,11 @@ func (h *Handler) GetNodes(c *gin.Context) {
 	grouped := map[string][]containerStatus{}
 	var order []string
 	for rows.Next() {
-		var cs containerStatus
-		var labelsJSON, envVarsJSON []byte
-		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen, &labelsJSON, &envVarsJSON); err != nil {
+		cs, err := scanContainer(rows)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		_ = json.Unmarshal(labelsJSON, &cs.Labels)
-		_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
 		if _, exists := grouped[cs.NodeName]; !exists {
 			order = append(order, cs.NodeName)
 		}
@@ -175,14 +190,11 @@ func (h *Handler) GetNode(c *gin.Context) {
 
 	containers := []containerStatus{}
 	for rows.Next() {
-		var cs containerStatus
-		var labelsJSON, envVarsJSON []byte
-		if err := rows.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen, &labelsJSON, &envVarsJSON); err != nil {
+		cs, err := scanContainer(rows)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		_ = json.Unmarshal(labelsJSON, &cs.Labels)
-		_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
 		containers = append(containers, cs)
 	}
 
@@ -192,4 +204,50 @@ func (h *Handler) GetNode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, nodeContainers{NodeName: node, Containers: containers})
+}
+
+type composeStack struct {
+	Project    string            `json:"project"`
+	Containers []containerStatus `json:"containers"`
+}
+
+func (h *Handler) GetNodeStacks(c *gin.Context) {
+	node := c.Param("node")
+
+	rows, err := h.db.Query(c.Request.Context(), statusQuery+" WHERE c.node_name = $1 ORDER BY c.compose_project, c.name", node)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	grouped := map[string][]containerStatus{}
+	var order []string
+	for rows.Next() {
+		cs, err := scanContainer(rows)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		project := cs.ComposeProject
+		if project == "" {
+			project = "(standalone)"
+		}
+		if _, exists := grouped[project]; !exists {
+			order = append(order, project)
+		}
+		grouped[project] = append(grouped[project], cs)
+	}
+
+	if len(grouped) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+
+	results := make([]composeStack, 0, len(grouped))
+	for _, project := range order {
+		results = append(results, composeStack{Project: project, Containers: grouped[project]})
+	}
+
+	c.JSON(http.StatusOK, results)
 }

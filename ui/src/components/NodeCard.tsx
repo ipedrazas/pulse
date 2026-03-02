@@ -7,6 +7,22 @@ interface NodeCardProps {
   onSelectContainer: (container: ContainerStatus) => void;
 }
 
+function groupByProject(
+  containers: ContainerStatus[],
+): { project: string; containers: ContainerStatus[] }[] {
+  const grouped = new Map<string, ContainerStatus[]>();
+  for (const c of containers) {
+    const project = c.compose_project || "";
+    const list = grouped.get(project);
+    if (list) {
+      list.push(c);
+    } else {
+      grouped.set(project, [c]);
+    }
+  }
+  return Array.from(grouped.entries()).map(([project, containers]) => ({ project, containers }));
+}
+
 export function NodeCard({ node, onSelectContainer }: NodeCardProps) {
   const visibleContainers = node.containers.filter(
     (c) => getContainerStaleness(c.last_seen) !== "expired",
@@ -16,6 +32,9 @@ export function NodeCard({ node, onSelectContainer }: NodeCardProps) {
 
   const running = visibleContainers.filter((c) => c.status === "running").length;
   const total = visibleContainers.length;
+  const stacks = groupByProject(visibleContainers);
+  const hasMultipleGroups =
+    stacks.length > 1 || (stacks.length === 1 && (stacks[0]?.project ?? "") !== "");
 
   return (
     <div className="rounded-xl border border-surface-border bg-surface-card overflow-hidden">
@@ -27,9 +46,22 @@ export function NodeCard({ node, onSelectContainer }: NodeCardProps) {
       </div>
 
       <div>
-        {visibleContainers.map((c) => (
-          <ContainerRow key={c.container_id} container={c} onSelect={onSelectContainer} />
-        ))}
+        {hasMultipleGroups
+          ? stacks.map((stack) => (
+              <div key={stack.project || "_standalone"}>
+                <div className="px-4 py-1.5 bg-white/[0.02] border-t border-surface-border">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    {stack.project || "standalone"}
+                  </span>
+                </div>
+                {stack.containers.map((c) => (
+                  <ContainerRow key={c.container_id} container={c} onSelect={onSelectContainer} />
+                ))}
+              </div>
+            ))
+          : visibleContainers.map((c) => (
+              <ContainerRow key={c.container_id} container={c} onSelect={onSelectContainer} />
+            ))}
       </div>
     </div>
   );

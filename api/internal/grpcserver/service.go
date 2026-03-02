@@ -51,19 +51,24 @@ func (s *MonitoringService) SyncMetadata(ctx context.Context, req *monitorv1.Syn
 		return nil, err
 	}
 
+	composeProject := req.Labels["com.docker.compose.project"]
+	composeDir := req.Labels["com.docker.compose.project.working_dir"]
+
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO containers (container_id, node_name, name, image_tag, env_vars, mounts, labels, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO containers (container_id, node_name, name, image_tag, env_vars, mounts, labels, compose_project, compose_dir, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 ON CONFLICT (container_id) DO UPDATE SET
-		   node_name  = EXCLUDED.node_name,
-		   name       = EXCLUDED.name,
-		   image_tag  = EXCLUDED.image_tag,
-		   env_vars   = EXCLUDED.env_vars,
-		   mounts     = EXCLUDED.mounts,
-		   labels     = EXCLUDED.labels,
-		   updated_at = EXCLUDED.updated_at`,
+		   node_name        = EXCLUDED.node_name,
+		   name             = EXCLUDED.name,
+		   image_tag        = EXCLUDED.image_tag,
+		   env_vars         = EXCLUDED.env_vars,
+		   mounts           = EXCLUDED.mounts,
+		   labels           = EXCLUDED.labels,
+		   compose_project  = EXCLUDED.compose_project,
+		   compose_dir      = EXCLUDED.compose_dir,
+		   updated_at       = EXCLUDED.updated_at`,
 		req.ContainerId, req.NodeName, req.Name, req.Image,
-		envsJSON, mountsJSON, labelsJSON, time.Now(),
+		envsJSON, mountsJSON, labelsJSON, composeProject, composeDir, time.Now(),
 	)
 	if err != nil {
 		slog.Error("failed to upsert metadata", "container_id", req.ContainerId, "error", err)

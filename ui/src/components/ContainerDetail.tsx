@@ -72,6 +72,9 @@ export function ContainerDetail({ container, onClose }: ContainerDetailProps) {
           <div>
             <DetailRow label="Container ID" value={container.container_id} />
             <DetailRow label="Node" value={container.node_name} />
+            {container.compose_project && (
+              <DetailRow label="Stack" value={container.compose_project} />
+            )}
             <DetailRow label="Image" value={container.image_tag} />
             <DetailRow label="Uptime" value={formatUptime(container.uptime_seconds)} />
             <DetailRow label="Last seen" value={formatLastSeen(container.last_seen)} />

@@ -59,20 +59,26 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 
 **Why:** Docker automatically sets labels `com.docker.compose.project` and `com.docker.compose.project.working_dir` on compose-managed containers. We already collect labels — we just need to use them.
 
-- [ ] Add a `compose_project` column to the `containers` table (migration `003_add_compose_project.up.sql`)
-- [ ] In `api/internal/grpcserver/service.go`, extract `com.docker.compose.project` and `com.docker.compose.project.working_dir` from the labels map and store them in the new column
-- [ ] Update the `statusQuery` in `api/internal/rest/handlers.go` to include the compose project
-- [ ] Add a new REST endpoint `GET /nodes/:node/stacks` that returns containers grouped by compose project
-- [ ] Update `ui/src/types.ts` with the compose project field
-- [ ] Update the UI to show compose-project grouping within each node (collapsible groups)
+- [x] Add `compose_project` and `compose_dir` columns to the `containers` table (migration `003_add_compose_project`)
+- [x] In `api/internal/grpcserver/service.go`, extract `com.docker.compose.project` and `com.docker.compose.project.working_dir` from the labels map and store them
+- [x] Update the `statusQuery` in `api/internal/rest/handlers.go` to include compose_project; refactored scan logic into `scanContainer` helper
+- [x] Add new REST endpoint `GET /nodes/:node/stacks` that returns containers grouped by compose project
+- [x] Update `ui/src/types.ts` with `compose_project` field
+- [x] Update `NodeCard` to group containers by compose project with section headers
+- [x] Update `ContainerRow` to use dedicated `compose_project` field
+- [x] Update `ContainerDetail` to show "Stack" row
 
 **Files touched:**
 - `api/internal/db/migrations/003_add_compose_project.up.sql` (new)
 - `api/internal/db/migrations/003_add_compose_project.down.sql` (new)
 - `api/internal/grpcserver/service.go`
 - `api/internal/rest/handlers.go`
+- `api/internal/rest/handlers_test.go`
 - `ui/src/types.ts`
-- `ui/src/components/NodeGrid.tsx` (or similar)
+- `ui/src/components/NodeCard.tsx`
+- `ui/src/components/ContainerRow.tsx`
+- `ui/src/components/ContainerDetail.tsx`
+- `ui/nginx.conf`
 
 ---
 

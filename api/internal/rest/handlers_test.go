@@ -78,6 +78,7 @@ func (r *mockRows) Scan(dest ...any) error {
 	*dest[6].(**string) = cs.LastSeen
 	*dest[7].(*[]byte) = marshalOrEmpty(cs.Labels)
 	*dest[8].(*[]byte) = marshalOrEmpty(cs.EnvVars)
+	*dest[9].(*string) = cs.ComposeProject
 	return nil
 }
 
@@ -109,6 +110,7 @@ func (r *mockRow) Scan(dest ...any) error {
 	*dest[6].(**string) = r.cs.LastSeen
 	*dest[7].(*[]byte) = marshalOrEmpty(r.cs.Labels)
 	*dest[8].(*[]byte) = marshalOrEmpty(r.cs.EnvVars)
+	*dest[9].(*string) = r.cs.ComposeProject
 	return nil
 }
 
@@ -147,11 +149,12 @@ func TestRegisterRoutes(t *testing.T) {
 
 	routes := r.Routes()
 	expected := map[string]string{
-		"/healthz":           "GET",
-		"/status":            "GET",
-		"/status/:container": "GET",
-		"/nodes":             "GET",
-		"/nodes/:node":       "GET",
+		"/healthz":            "GET",
+		"/status":             "GET",
+		"/status/:container":  "GET",
+		"/nodes":              "GET",
+		"/nodes/:node":        "GET",
+		"/nodes/:node/stacks": "GET",
 	}
 
 	found := make(map[string]bool)
@@ -414,5 +417,72 @@ func TestContainerStatusJSON_NullFields(t *testing.T) {
 
 	if decoded["status"] != nil {
 		t.Errorf("expected null status, got %v", decoded["status"])
+	}
+}
+
+func TestGetNodeStacks_GroupsByProject(t *testing.T) {
+	rows := &mockRows{data: []containerStatus{
+		{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running"), ComposeProject: "web"},
+		{ContainerID: "c2", NodeName: "pve1", Name: "redis", ImageTag: "redis:7", Status: ptr("running"), ComposeProject: "web"},
+		{ContainerID: "c3", NodeName: "pve1", Name: "postgres", ImageTag: "pg:16", Status: ptr("running"), ComposeProject: "db"},
+	}}
+
+	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	r := gin.New()
+	r.GET("/nodes/:node/stacks", h.GetNodeStacks)
+
+	w := doRequest(r, "GET", "/nodes/pve1/stacks")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result []composeStack
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 stacks, got %d", len(result))
+	}
+	if result[0].Project != "web" || len(result[0].Containers) != 2 {
+		t.Errorf("stack 'web': expected 2 containers, got %d", len(result[0].Containers))
+	}
+	if result[1].Project != "db" || len(result[1].Containers) != 1 {
+		t.Errorf("stack 'db': expected 1 container, got %d", len(result[1].Containers))
+	}
+}
+
+func TestGetNodeStacks_StandaloneContainers(t *testing.T) {
+	rows := &mockRows{data: []containerStatus{
+		{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running"), ComposeProject: ""},
+	}}
+
+	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	r := gin.New()
+	r.GET("/nodes/:node/stacks", h.GetNodeStacks)
+
+	w := doRequest(r, "GET", "/nodes/pve1/stacks")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result []composeStack
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 stack, got %d", len(result))
+	}
+	if result[0].Project != "(standalone)" {
+		t.Errorf("expected project '(standalone)', got %q", result[0].Project)
+	}
+}
+
+func TestGetNodeStacks_NotFound(t *testing.T) {
+	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}}, testToken)
+	r := gin.New()
+	r.GET("/nodes/:node/stacks", h.GetNodeStacks)
+
+	w := doRequest(r, "GET", "/nodes/ghost/stacks")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
 	}
 }
