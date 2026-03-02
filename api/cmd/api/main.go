@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,6 +24,67 @@ import (
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
 
+func initDatabase(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
+	if err := db.RunMigrations(dbURL); err != nil {
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("create db pool: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping db: %w", err)
+	}
+
+	slog.Info("database connected")
+	return pool, nil
+}
+
+func setupGRPC(cfg *config.Config, pool *pgxpool.Pool) (*grpc.Server, *grpcserver.MonitoringService, error) {
+	opts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(cfg.MonitorToken)),
+	}
+
+	if cfg.TLSCertFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("load TLS certificate: %w", err)
+		}
+		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsCfg)))
+		slog.Info("gRPC TLS enabled", "cert", cfg.TLSCertFile)
+	} else {
+		slog.Info("gRPC TLS disabled (no TLS_CERT_FILE set)")
+	}
+
+	srv := grpc.NewServer(opts...)
+	svc := grpcserver.NewMonitoringService(pool)
+	monitorv1.RegisterMonitoringServiceServer(srv, svc)
+
+	return srv, svc, nil
+}
+
+func startSweeper(ctx context.Context, svc *grpcserver.MonitoringService) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			swept, err := svc.SweepStaleContainers(ctx, 48*time.Hour)
+			if err != nil {
+				slog.Error("stale container sweep failed", "error", err)
+			} else if swept > 0 {
+				slog.Info("stale containers swept", "count", swept)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
@@ -32,69 +94,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Run database migrations
-	if err := db.RunMigrations(cfg.DBURL); err != nil {
-		slog.Error("failed to run migrations", "error", err)
-		os.Exit(1)
-	}
-
-	// Create database connection pool
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, cfg.DBURL)
+	pool, err := initDatabase(ctx, cfg.DBURL)
 	if err != nil {
-		slog.Error("failed to create db pool", "error", err)
+		slog.Error("database init failed", "error", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
-		slog.Error("failed to ping db", "error", err)
+	grpcSrv, monSvc, err := setupGRPC(cfg, pool)
+	if err != nil {
+		slog.Error("gRPC setup failed", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("database connected")
 
-	// gRPC server
-	grpcOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(cfg.MonitorToken)),
-	}
-
-	if cfg.TLSCertFile != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
-		if err != nil {
-			slog.Error("failed to load TLS certificate", "error", err)
-			os.Exit(1)
-		}
-		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
-		grpcOpts = append(grpcOpts, grpc.Creds(credentials.NewTLS(tlsCfg)))
-		slog.Info("gRPC TLS enabled", "cert", cfg.TLSCertFile)
-	} else {
-		slog.Info("gRPC TLS disabled (no TLS_CERT_FILE set)")
-	}
-
-	grpcSrv := grpc.NewServer(grpcOpts...)
-	monSvc := grpcserver.NewMonitoringService(pool)
-	monitorv1.RegisterMonitoringServiceServer(grpcSrv, monSvc)
-
-	// Background sweeper: mark containers stale if no heartbeat in 48h.
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				swept, err := monSvc.SweepStaleContainers(ctx, 48*time.Hour)
-				if err != nil {
-					slog.Error("stale container sweep failed", "error", err)
-				} else if swept > 0 {
-					slog.Info("stale containers swept", "count", swept)
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	go startSweeper(ctx, monSvc)
 
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {

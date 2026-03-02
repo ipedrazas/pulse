@@ -25,3 +25,16 @@ func TestConnectWithRetry_CancelledContext(t *testing.T) {
 		t.Fatal("expected error for cancelled context")
 	}
 }
+
+func TestConnectWithRetry_ZeroRetries(t *testing.T) {
+	ctx := context.Background()
+
+	_, err := ConnectWithRetry(ctx, "postgres://localhost:5432/test", 0)
+	if err == nil {
+		t.Fatal("expected error for zero retries")
+	}
+	expected := "failed to connect after 0 attempts"
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}

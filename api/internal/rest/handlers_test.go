@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -488,5 +489,182 @@ func TestGetNodeStacks_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- mock action row ---
+
+type mockActionRow struct {
+	ar  actionResponse
+	err error
+}
+
+func (r *mockActionRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	*dest[0].(*string) = r.ar.CommandID
+	*dest[1].(*string) = r.ar.NodeName
+	*dest[2].(*string) = r.ar.Action
+	*dest[3].(*string) = r.ar.Target
+	*dest[4].(*[]byte) = marshalOrEmpty(r.ar.Params)
+	*dest[5].(*string) = r.ar.Status
+	*dest[6].(*string) = r.ar.Output
+	*dest[7].(*int64) = r.ar.DurationMs
+	*dest[8].(*string) = r.ar.CreatedAt
+	*dest[9].(*string) = r.ar.UpdatedAt
+	return nil
+}
+
+// --- helpers ---
+
+func doJSONRequest(r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// --- action tests ---
+
+func TestCreateAction_BadJSON(t *testing.T) {
+	h := NewHandlerWithDB(&mockDB{}, testToken)
+	r := gin.New()
+	r.POST("/nodes/:node/actions", h.CreateAction)
+
+	w := doJSONRequest(r, "POST", "/nodes/test/actions", "")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestCreateAction_UnknownAction(t *testing.T) {
+	h := NewHandlerWithDB(&mockDB{}, testToken)
+	r := gin.New()
+	r.POST("/nodes/:node/actions", h.CreateAction)
+
+	w := doJSONRequest(r, "POST", "/nodes/test/actions", `{"action":"unknown_action"}`)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if body["error"] != "unknown action: unknown_action" {
+		t.Errorf("unexpected error: %s", body["error"])
+	}
+}
+
+func TestCreateAction_Success(t *testing.T) {
+	ar := actionResponse{
+		CommandID: "cmd-1",
+		NodeName:  "test-node",
+		Action:    "compose_update",
+		Target:    "my-stack",
+		Status:    "pending",
+		CreatedAt: "2025-01-15 10:00:00+00",
+		UpdatedAt: "2025-01-15 10:00:00+00",
+	}
+
+	h := NewHandlerWithDB(&mockDB{row: &mockActionRow{ar: ar}}, testToken)
+	r := gin.New()
+	r.POST("/nodes/:node/actions", h.CreateAction)
+
+	w := doJSONRequest(r, "POST", "/nodes/test-node/actions", `{"action":"compose_update","target":"my-stack"}`)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", w.Code)
+	}
+
+	var result actionResponse
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result.CommandID != "cmd-1" {
+		t.Errorf("expected cmd-1, got %s", result.CommandID)
+	}
+}
+
+func TestCreateAction_DBError(t *testing.T) {
+	h := NewHandlerWithDB(&mockDB{row: &mockRow{err: errors.New("db error")}}, testToken)
+	r := gin.New()
+	r.POST("/nodes/:node/actions", h.CreateAction)
+
+	w := doJSONRequest(r, "POST", "/nodes/test/actions", `{"action":"compose_update"}`)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestListActions_QueryError(t *testing.T) {
+	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("db error")}, testToken)
+	r := gin.New()
+	r.GET("/nodes/:node/actions", h.ListActions)
+
+	w := doRequest(r, "GET", "/nodes/test/actions")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestListActions_Empty(t *testing.T) {
+	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}}, testToken)
+	r := gin.New()
+	r.GET("/nodes/:node/actions", h.ListActions)
+
+	w := doRequest(r, "GET", "/nodes/test/actions")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result []actionResponse
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if len(result) != 0 {
+		t.Errorf("expected empty result, got %d items", len(result))
+	}
+}
+
+func TestGetAction_NotFound(t *testing.T) {
+	h := NewHandlerWithDB(&mockDB{row: &mockRow{err: pgx.ErrNoRows}}, testToken)
+	r := gin.New()
+	r.GET("/nodes/:node/actions/:id", h.GetAction)
+
+	w := doRequest(r, "GET", "/nodes/test/actions/abc123")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetAction_Success(t *testing.T) {
+	ar := actionResponse{
+		CommandID: "cmd-1",
+		NodeName:  "test-node",
+		Action:    "compose_restart",
+		Target:    "my-stack",
+		Status:    "success",
+		Output:    "done",
+		CreatedAt: "2025-01-15 10:00:00+00",
+		UpdatedAt: "2025-01-15 10:05:00+00",
+	}
+
+	h := NewHandlerWithDB(&mockDB{row: &mockActionRow{ar: ar}}, testToken)
+	r := gin.New()
+	r.GET("/nodes/:node/actions/:id", h.GetAction)
+
+	w := doRequest(r, "GET", "/nodes/test-node/actions/cmd-1")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result actionResponse
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result.CommandID != "cmd-1" || result.Status != "success" {
+		t.Errorf("unexpected result: %+v", result)
 	}
 }
