@@ -17,17 +17,13 @@ export function ContainerRow({ container }: ContainerRowProps) {
       <StatusDot status={container.status} />
 
       <div className="min-w-0 flex-1">
-        <span className="font-medium text-gray-200 truncate block">
-          {container.name}
-        </span>
+        <span className="font-medium text-gray-200 truncate block">{container.name}</span>
         <span className="font-mono text-xs text-gray-500 truncate block">
           {container.image_tag}
         </span>
       </div>
 
-      <span className={`text-xs font-medium ${statusColor} shrink-0`}>
-        {statusText}
-      </span>
+      <span className={`text-xs font-medium ${statusColor} shrink-0`}>{statusText}</span>
 
       <span className="text-xs text-gray-500 w-16 text-right shrink-0">
         {formatUptime(container.uptime_seconds)}

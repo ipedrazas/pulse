@@ -17,7 +17,5 @@ export function RefreshIndicator({ lastUpdated }: RefreshIndicatorProps) {
   const seconds = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
   const label = seconds < 5 ? "just now" : `${seconds}s ago`;
 
-  return (
-    <span className="text-xs text-gray-500">Updated {label}</span>
-  );
+  return <span className="text-xs text-gray-500">Updated {label}</span>;
 }

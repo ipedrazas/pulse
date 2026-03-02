@@ -1,18 +1,34 @@
 package rest
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// DB abstracts the database operations needed by the REST handlers.
+type DB interface {
+	Ping(ctx context.Context) error
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
 type Handler struct {
-	pool *pgxpool.Pool
+	db DB
 }
 
 func NewHandler(pool *pgxpool.Pool) *Handler {
-	return &Handler{pool: pool}
+	return &Handler{db: pool}
+}
+
+// NewHandlerWithDB creates a handler with an explicit DB interface (useful for testing).
+func NewHandlerWithDB(db DB) *Handler {
+	return &Handler{db: db}
 }
 
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
@@ -24,7 +40,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 }
 
 func (h *Handler) Healthz(c *gin.Context) {
-	if err := h.pool.Ping(c.Request.Context()); err != nil {
+	if err := h.db.Ping(c.Request.Context()); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy", "error": err.Error()})
 		return
 	}
@@ -60,7 +76,7 @@ LEFT JOIN LATERAL (
 ) h ON true`
 
 func (h *Handler) GetStatus(c *gin.Context) {
-	rows, err := h.pool.Query(c.Request.Context(), statusQuery)
+	rows, err := h.db.Query(c.Request.Context(), statusQuery)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -83,7 +99,7 @@ func (h *Handler) GetStatus(c *gin.Context) {
 func (h *Handler) GetContainerStatus(c *gin.Context) {
 	containerID := c.Param("container")
 
-	row := h.pool.QueryRow(c.Request.Context(), statusQuery+" WHERE c.container_id = $1", containerID)
+	row := h.db.QueryRow(c.Request.Context(), statusQuery+" WHERE c.container_id = $1", containerID)
 
 	var cs containerStatus
 	if err := row.Scan(&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag, &cs.Status, &cs.UptimeSeconds, &cs.LastSeen); err != nil {
@@ -100,7 +116,7 @@ type nodeContainers struct {
 }
 
 func (h *Handler) GetNodes(c *gin.Context) {
-	rows, err := h.pool.Query(c.Request.Context(), statusQuery+" ORDER BY c.node_name, c.name")
+	rows, err := h.db.Query(c.Request.Context(), statusQuery+" ORDER BY c.node_name, c.name")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -132,7 +148,7 @@ func (h *Handler) GetNodes(c *gin.Context) {
 func (h *Handler) GetNode(c *gin.Context) {
 	node := c.Param("node")
 
-	rows, err := h.pool.Query(c.Request.Context(), statusQuery+" WHERE c.node_name = $1 ORDER BY c.name", node)
+	rows, err := h.db.Query(c.Request.Context(), statusQuery+" WHERE c.node_name = $1 ORDER BY c.name", node)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

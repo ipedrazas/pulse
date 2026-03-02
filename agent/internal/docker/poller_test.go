@@ -2,6 +2,8 @@ package docker
 
 import (
 	"testing"
+
+	"github.com/docker/docker/api/types/container"
 )
 
 func TestParseEnvs(t *testing.T) {
@@ -24,6 +26,40 @@ func TestParseEnvs(t *testing.T) {
 	}
 }
 
+func TestParseEnvs_Empty(t *testing.T) {
+	result := parseEnvs(nil)
+	if len(result) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(result))
+	}
+}
+
+func TestParseMounts(t *testing.T) {
+	input := []container.MountPoint{
+		{Source: "/host/data", Destination: "/data", Mode: "rw"},
+		{Source: "/host/config", Destination: "/config", Mode: "ro"},
+	}
+
+	result := parseMounts(input)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 mounts, got %d", len(result))
+	}
+
+	if result[0].Source != "/host/data" || result[0].Destination != "/data" || result[0].Mode != "rw" {
+		t.Errorf("mount[0] = %+v, unexpected", result[0])
+	}
+	if result[1].Source != "/host/config" || result[1].Destination != "/config" || result[1].Mode != "ro" {
+		t.Errorf("mount[1] = %+v, unexpected", result[1])
+	}
+}
+
+func TestParseMounts_Empty(t *testing.T) {
+	result := parseMounts(nil)
+	if len(result) != 0 {
+		t.Errorf("expected empty slice, got %d entries", len(result))
+	}
+}
+
 func TestSortedEnvString_Deterministic(t *testing.T) {
 	envs := map[string]string{"Z": "3", "A": "1", "M": "2"}
 
@@ -43,5 +79,13 @@ func TestSortedEnvString_Deterministic(t *testing.T) {
 func TestSortedEnvString_Empty(t *testing.T) {
 	if got := SortedEnvString(nil); got != "" {
 		t.Errorf("SortedEnvString(nil) = %q, want empty", got)
+	}
+}
+
+func TestSortedEnvString_SingleEntry(t *testing.T) {
+	envs := map[string]string{"KEY": "val"}
+	want := "KEY=val\n"
+	if got := SortedEnvString(envs); got != want {
+		t.Errorf("SortedEnvString = %q, want %q", got, want)
 	}
 }

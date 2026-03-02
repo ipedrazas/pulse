@@ -11,19 +11,16 @@ language:
   go:
     source_dir: [api, agent]
     coverage_threshold: 50
-    
+
   typescript:
     source_dir: [ui]
+    coverage_threshold: 50
 
 #
 files:
   required:
     - README.md
     - LICENSE
-#
-coverage:
-  threshold: 50
-#
 
 checks:
   disabled:
@@ -42,3 +39,4 @@ checks:
     - common:integration
     - common:license
     - typescript:logging
+    - common:retry

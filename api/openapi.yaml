@@ -1,0 +1,195 @@
+openapi: 3.0.3
+info:
+  title: Pulse API
+  description: REST API for the Pulse distributed Docker monitoring system.
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      description: Returns the health status of the API and its database connection.
+      operationId: healthCheck
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: API is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthErrorResponse"
+
+  /status:
+    get:
+      summary: List all containers
+      description: Returns the latest status for every monitored container across all nodes.
+      operationId: getStatus
+      responses:
+        "200":
+          description: List of container statuses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContainerStatus"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /status/{container_id}:
+    get:
+      summary: Get container status
+      description: Returns the latest status for a specific container.
+      operationId: getContainerStatus
+      parameters:
+        - name: container_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Docker container ID
+      responses:
+        "200":
+          description: Container status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContainerStatus"
+        "404":
+          description: Container not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nodes:
+    get:
+      summary: List nodes with containers
+      description: Returns all containers grouped by their reporting node.
+      operationId: getNodes
+      responses:
+        "200":
+          description: List of nodes with their containers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NodeContainers"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nodes/{node_name}:
+    get:
+      summary: Get node containers
+      description: Returns all containers for a specific node.
+      operationId: getNode
+      parameters:
+        - name: node_name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Node name
+      responses:
+        "200":
+          description: Node with its containers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeContainers"
+        "404":
+          description: Node not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [healthy]
+          example: healthy
+
+    HealthErrorResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [unhealthy]
+        error:
+          type: string
+
+    ContainerStatus:
+      type: object
+      required: [container_id, node_name, name, image_tag]
+      properties:
+        container_id:
+          type: string
+          example: "abc123def456"
+        node_name:
+          type: string
+          example: "pve1"
+        name:
+          type: string
+          example: "nginx-proxy"
+        image_tag:
+          type: string
+          example: "nginx:1.25-alpine"
+        status:
+          type: string
+          nullable: true
+          example: "running"
+          description: Container status (running, exited, paused, etc.)
+        uptime_seconds:
+          type: integer
+          format: int64
+          nullable: true
+          example: 86400
+        last_seen:
+          type: string
+          nullable: true
+          example: "2025-01-15 10:30:00+00"
+          description: Timestamp of the last heartbeat
+
+    NodeContainers:
+      type: object
+      required: [node_name, containers]
+      properties:
+        node_name:
+          type: string
+          example: "pve1"
+        containers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContainerStatus"
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

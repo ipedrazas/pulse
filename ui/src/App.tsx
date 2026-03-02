@@ -8,10 +8,7 @@ import { useHealth } from "./hooks/useHealth";
 import { useNodes } from "./hooks/useNodes";
 import type { NodeContainers } from "./types";
 
-function filterNodes(
-  nodes: NodeContainers[],
-  query: string,
-): NodeContainers[] {
+function filterNodes(nodes: NodeContainers[], query: string): NodeContainers[] {
   if (!query) return nodes;
   const q = query.toLowerCase();
 
@@ -21,9 +18,7 @@ function filterNodes(
       if (nodeMatch) return node;
 
       const filtered = node.containers.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.image_tag.toLowerCase().includes(q),
+        (c) => c.name.toLowerCase().includes(q) || c.image_tag.toLowerCase().includes(q),
       );
       if (filtered.length === 0) return null;
       return { ...node, containers: filtered };
@@ -36,13 +31,9 @@ export default function App() {
   const health = useHealth();
   const nodes = useNodes();
 
-  const healthy =
-    health.data != null ? health.data.status === "healthy" : null;
+  const healthy = health.data != null ? health.data.status === "healthy" : null;
 
-  const filtered = useMemo(
-    () => filterNodes(nodes.data ?? [], search),
-    [nodes.data, search],
-  );
+  const filtered = useMemo(() => filterNodes(nodes.data ?? [], search), [nodes.data, search]);
 
   return (
     <>
@@ -60,10 +51,7 @@ export default function App() {
           />
         ) : filtered.length === 0 ? (
           search ? (
-            <EmptyState
-              title="No matches"
-              message={`Nothing matched "${search}"`}
-            />
+            <EmptyState title="No matches" message={`Nothing matched "${search}"`} />
           ) : (
             <EmptyState
               title="No nodes"

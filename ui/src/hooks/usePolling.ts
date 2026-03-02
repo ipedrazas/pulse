@@ -7,10 +7,7 @@ interface UsePollingResult<T> {
   lastUpdated: Date | null;
 }
 
-export function usePolling<T>(
-  fetcher: () => Promise<T>,
-  intervalMs: number,
-): UsePollingResult<T> {
+export function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number): UsePollingResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
