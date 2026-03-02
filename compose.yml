@@ -9,7 +9,7 @@ services:
       - "8080:8080"
       - "50051:50051"
     environment:
-      DB_URL: "postgres://pulse:pulse@timescaledb:5432/pulse?sslmode=disable"
+      DB_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}?sslmode=disable"
       GRPC_PORT: "50051"
       HTTP_PORT: "8080"
       MONITOR_TOKEN: "${MONITOR_TOKEN}"
@@ -33,6 +33,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  ui:
+    image: ipedrazas/pulse-ui:latest
+    container_name: pulse-ui
+    build:
+      context: ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
     restart: unless-stopped
 
   agent:

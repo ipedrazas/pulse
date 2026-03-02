@@ -6,6 +6,7 @@ vars:
   REGISTRY: docker.io/ipedrazas
   IMAGE_AGENT: pulse-agent
   IMAGE_API: pulse-api
+  IMAGE_UI: pulse-ui
 
 tasks:
   default:
@@ -56,9 +57,27 @@ tasks:
       - buf lint
       - go vet ./agent/... ./api/... ./proto/...
 
+  ui:dev:
+    desc: Start UI dev server
+    dir: ui
+    cmds:
+      - npm run dev
+
+  ui:build:
+    desc: Build UI for production
+    dir: ui
+    cmds:
+      - npm run build
+
+  ui:lint:
+    desc: Lint UI code
+    dir: ui
+    cmds:
+      - npx tsc --noEmit
+
   docker:
     desc: Build all Docker images
-    deps: [docker:agent, docker:api]
+    deps: [docker:agent, docker:api, docker:ui]
 
   docker:agent:
     desc: Build the agent Docker image
@@ -69,6 +88,11 @@ tasks:
     desc: Build the API server Docker image
     cmds:
       - docker build --platform linux/amd64,linux/arm64 -t {{.REGISTRY}}/{{.IMAGE_API}} -f api/Dockerfile . --push
+
+  docker:ui:
+    desc: Build the UI Docker image
+    cmds:
+      - docker build --platform linux/amd64,linux/arm64 -t {{.REGISTRY}}/{{.IMAGE_UI}} -f ui/Dockerfile ui --push
 
   tidy:
     desc: Run go mod tidy on all modules

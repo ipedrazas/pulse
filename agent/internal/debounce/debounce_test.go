@@ -8,9 +8,9 @@ import (
 
 func makeInfo(id, image string, envs map[string]string, mounts []docker.MountInfo) docker.ContainerInfo {
 	return docker.ContainerInfo{
-		ID:    id,
-		Image: image,
-		Envs:  envs,
+		ID:     id,
+		Image:  image,
+		Envs:   envs,
 		Mounts: mounts,
 	}
 }

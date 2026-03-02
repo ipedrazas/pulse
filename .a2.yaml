@@ -10,6 +10,8 @@ language:
   explicit: [go, typescript]  # Override auto-detection
   go:
     source_dir: [api, agent]
+    coverage_threshold: 50
+    
   typescript:
     source_dir: [ui]
 
@@ -39,3 +41,4 @@ checks:
     - common:config_validation
     - common:integration
     - common:license
+    - typescript:logging
