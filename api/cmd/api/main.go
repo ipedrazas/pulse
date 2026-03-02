@@ -86,6 +86,19 @@ func startSweeper(ctx context.Context, svc *grpcserver.MonitoringService) {
 	}
 }
 
+func startAgentChecker(ctx context.Context, svc *grpcserver.MonitoringService) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			svc.CheckAgentStatus(ctx)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
@@ -113,6 +126,7 @@ func main() {
 	}
 
 	go startSweeper(ctx, monSvc)
+	go startAgentChecker(ctx, monSvc)
 
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {

@@ -9,11 +9,13 @@ import (
 	"time"
 )
 
-// Event types for container state transitions.
+// Event types for container and agent state transitions.
 const (
 	EventContainerDied    = "container_died"
 	EventContainerStarted = "container_started"
 	EventContainerRemoved = "container_removed"
+	EventAgentOffline     = "agent_offline"
+	EventAgentOnline      = "agent_online"
 )
 
 // Event represents a container state transition that triggers a webhook.
@@ -43,6 +45,10 @@ func (e *Event) Text() string {
 	case EventContainerRemoved:
 		return fmt.Sprintf("\U000026aa Container *%s* on %s was removed",
 			e.ContainerName, e.NodeName)
+	case EventAgentOffline:
+		return fmt.Sprintf("\U0001f534 Agent on %s went offline", e.NodeName)
+	case EventAgentOnline:
+		return fmt.Sprintf("\U0001f7e2 Agent on %s came online", e.NodeName)
 	default:
 		return fmt.Sprintf("Container *%s* on %s: %s → %s",
 			e.ContainerName, e.NodeName, e.PreviousStatus, e.CurrentStatus)

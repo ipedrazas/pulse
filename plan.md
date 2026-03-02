@@ -181,11 +181,11 @@ Command channel from hub to agent using polling-based approach.
 
 **Goal:** Notify external systems when containers go down or come back up.
 
-- [ ] Add `WEBHOOK_URL` and `WEBHOOK_EVENTS` env vars to API config
-- [ ] Create `api/internal/alerts/webhook.go` that POSTs JSON payloads to the webhook URL
-- [ ] In the heartbeat handler, detect transitions (running → exited, exited → running) by comparing with the previous heartbeat
-- [ ] Fire webhook on state transitions
-- [ ] Support Slack-compatible webhook format (works with Slack, Discord, Mattermost)
+- [x] Add `WEBHOOK_URL` and `WEBHOOK_EVENTS` env vars to API config
+- [x] Create `api/internal/alerts/webhook.go` that POSTs JSON payloads to the webhook URL
+- [x] In the heartbeat handler, detect transitions (running → exited, exited → running) by comparing with the previous heartbeat
+- [x] Fire webhook on state transitions
+- [x] Support Slack-compatible webhook format (works with Slack, Discord, Mattermost)
 
 **Files touched:**
 - `api/internal/config/config.go`

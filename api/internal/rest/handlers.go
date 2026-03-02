@@ -46,6 +46,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	auth.POST("/nodes/:node/actions", h.CreateAction)
 	auth.GET("/nodes/:node/actions", h.ListActions)
 	auth.GET("/nodes/:node/actions/:id", h.GetAction)
+	auth.GET("/agents", h.GetAgents)
 }
 
 // scannable is satisfied by both pgx.Rows (current row) and pgx.Row.
@@ -380,4 +381,38 @@ func scanAction(s scannable) (actionResponse, error) {
 	}
 	_ = json.Unmarshal(paramsJSON, &ar.Params)
 	return ar, nil
+}
+
+// --- Agents ---
+
+type agentStatus struct {
+	NodeName     string `json:"node_name"`
+	AgentVersion string `json:"agent_version"`
+	FirstSeen    string `json:"first_seen"`
+	LastSeen     string `json:"last_seen"`
+	Online       bool   `json:"online"`
+}
+
+func (h *Handler) GetAgents(c *gin.Context) {
+	rows, err := h.db.Query(c.Request.Context(),
+		`SELECT node_name, agent_version, first_seen::text, last_seen::text,
+		        (last_seen > NOW() - INTERVAL '2 minutes') AS online
+		 FROM agents ORDER BY node_name`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	results := []agentStatus{}
+	for rows.Next() {
+		var a agentStatus
+		if err := rows.Scan(&a.NodeName, &a.AgentVersion, &a.FirstSeen, &a.LastSeen, &a.Online); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		results = append(results, a)
+	}
+
+	c.JSON(http.StatusOK, results)
 }

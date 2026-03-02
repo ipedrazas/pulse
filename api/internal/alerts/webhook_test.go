@@ -209,6 +209,30 @@ func TestText_ContainerRemoved(t *testing.T) {
 	}
 }
 
+func TestText_AgentOffline(t *testing.T) {
+	e := &Event{
+		EventType: EventAgentOffline,
+		NodeName:  "node-1",
+	}
+	text := e.Text()
+	expected := "\U0001f534 Agent on node-1 went offline"
+	if text != expected {
+		t.Errorf("expected %q, got %q", expected, text)
+	}
+}
+
+func TestText_AgentOnline(t *testing.T) {
+	e := &Event{
+		EventType: EventAgentOnline,
+		NodeName:  "node-1",
+	}
+	text := e.Text()
+	expected := "\U0001f7e2 Agent on node-1 came online"
+	if text != expected {
+		t.Errorf("expected %q, got %q", expected, text)
+	}
+}
+
 func TestSend_AllEventsWhenNoFilter(t *testing.T) {
 	var mu sync.Mutex
 	requestCount := 0

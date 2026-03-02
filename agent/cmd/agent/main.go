@@ -19,6 +19,11 @@ import (
 
 const pollInterval = 30 * time.Second
 
+// version is set via -ldflags at build time, e.g.:
+//
+//	go build -ldflags "-X main.version=1.0.0" ./agent/cmd/agent
+var version = "dev"
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
@@ -148,6 +153,11 @@ func pollOnce(ctx context.Context, poller *docker.Poller, client *grpcclient.Cli
 		if err := client.ReportRemovedContainers(ctx, nodeName, removedIDs); err != nil {
 			slog.Error("failed to report removed containers", "error", err)
 		}
+	}
+
+	// Send agent-level heartbeat after container heartbeats.
+	if err := client.AgentHeartbeat(ctx, nodeName, version); err != nil {
+		slog.Error("agent heartbeat failed", "error", err)
 	}
 
 	slog.Debug("poll complete", "containers", len(containers))

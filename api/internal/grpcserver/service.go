@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,10 +18,13 @@ type MonitoringService struct {
 	monitorv1.UnimplementedMonitoringServiceServer
 	pool     *pgxpool.Pool
 	notifier *alerts.Notifier
+
+	onlineMu     sync.Mutex
+	onlineAgents map[string]bool
 }
 
 func NewMonitoringService(pool *pgxpool.Pool, notifier *alerts.Notifier) *MonitoringService {
-	return &MonitoringService{pool: pool, notifier: notifier}
+	return &MonitoringService{pool: pool, notifier: notifier, onlineAgents: make(map[string]bool)}
 }
 
 func (s *MonitoringService) ReportHeartbeat(ctx context.Context, req *monitorv1.ReportHeartbeatRequest) (*monitorv1.ReportHeartbeatResponse, error) {
@@ -257,6 +261,76 @@ func (s *MonitoringService) buildTransitionEvent(ctx context.Context, containerI
 	}
 
 	return event
+}
+
+func (s *MonitoringService) AgentHeartbeat(ctx context.Context, req *monitorv1.AgentHeartbeatRequest) (*monitorv1.AgentHeartbeatResponse, error) {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO agents (node_name, agent_version, last_seen)
+		 VALUES ($1, $2, NOW())
+		 ON CONFLICT (node_name) DO UPDATE SET
+		   agent_version = EXCLUDED.agent_version,
+		   last_seen     = NOW()`,
+		req.NodeName, req.AgentVersion,
+	)
+	if err != nil {
+		slog.Error("failed to upsert agent heartbeat", "node", req.NodeName, "error", err)
+		return nil, err
+	}
+
+	slog.Debug("agent heartbeat recorded", "node", req.NodeName, "version", req.AgentVersion)
+	return &monitorv1.AgentHeartbeatResponse{}, nil
+}
+
+// CheckAgentStatus queries the agents table and fires agent_online/agent_offline
+// webhook events for nodes that have changed state since the last check.
+func (s *MonitoringService) CheckAgentStatus(ctx context.Context) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT node_name FROM agents WHERE last_seen > NOW() - INTERVAL '2 minutes'`,
+	)
+	if err != nil {
+		slog.Error("failed to query agent status", "error", err)
+		return
+	}
+	defer rows.Close()
+
+	currentOnline := make(map[string]bool)
+	for rows.Next() {
+		var nodeName string
+		if err := rows.Scan(&nodeName); err != nil {
+			slog.Error("failed to scan agent node_name", "error", err)
+			continue
+		}
+		currentOnline[nodeName] = true
+	}
+
+	s.onlineMu.Lock()
+	prev := s.onlineAgents
+	s.onlineAgents = currentOnline
+	s.onlineMu.Unlock()
+
+	if s.notifier == nil {
+		return
+	}
+
+	// Detect newly online agents.
+	for node := range currentOnline {
+		if !prev[node] {
+			s.notifier.Send(alerts.Event{
+				EventType: alerts.EventAgentOnline,
+				NodeName:  node,
+			})
+		}
+	}
+
+	// Detect newly offline agents.
+	for node := range prev {
+		if !currentOnline[node] {
+			s.notifier.Send(alerts.Event{
+				EventType: alerts.EventAgentOffline,
+				NodeName:  node,
+			})
+		}
+	}
 }
 
 // SweepStaleContainers marks containers as removed if they haven't had a

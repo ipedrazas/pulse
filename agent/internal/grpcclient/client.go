@@ -142,6 +142,16 @@ func (c *Client) ReportRemovedContainers(ctx context.Context, nodeName string, c
 	return err
 }
 
+// AgentHeartbeat sends an agent-level heartbeat to the hub.
+func (c *Client) AgentHeartbeat(ctx context.Context, nodeName, agentVersion string) error {
+	ctx = c.withToken(ctx)
+	_, err := c.service.AgentHeartbeat(ctx, &monitorv1.AgentHeartbeatRequest{
+		NodeName:     nodeName,
+		AgentVersion: agentVersion,
+	})
+	return err
+}
+
 func (c *Client) withToken(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "x-monitor-token", c.token)
 }

@@ -10,6 +10,7 @@ service MonitoringService {
   rpc GetPendingCommands(GetPendingCommandsRequest) returns (GetPendingCommandsResponse);
   rpc ReportCommandResult(ReportCommandResultRequest) returns (ReportCommandResultResponse);
   rpc ReportRemovedContainers(ReportRemovedContainersRequest) returns (ReportRemovedContainersResponse);
+  rpc AgentHeartbeat(AgentHeartbeatRequest) returns (AgentHeartbeatResponse);
 }
 
 message ReportHeartbeatRequest {
@@ -75,3 +76,12 @@ message ReportRemovedContainersRequest {
 message ReportRemovedContainersResponse {
   int32 removed_count = 1;
 }
+
+// Agent-level heartbeat — agents report liveness independently of containers.
+
+message AgentHeartbeatRequest {
+  string node_name      = 1;
+  string agent_version  = 2;
+}
+
+message AgentHeartbeatResponse {}

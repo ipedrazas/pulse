@@ -30,7 +30,7 @@ func init() {
 type mockDB struct {
 	pingErr  error
 	queryErr error
-	rows     *mockRows
+	rows     pgx.Rows
 	row      pgx.Row
 }
 
@@ -162,6 +162,7 @@ func TestRegisterRoutes(t *testing.T) {
 		{"POST", "/nodes/:node/actions"},
 		{"GET", "/nodes/:node/actions"},
 		{"GET", "/nodes/:node/actions/:id"},
+		{"GET", "/agents"},
 	}
 
 	registered := make(map[routeKey]bool)
@@ -666,5 +667,92 @@ func TestGetAction_Success(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if result.CommandID != "cmd-1" || result.Status != "success" {
 		t.Errorf("unexpected result: %+v", result)
+	}
+}
+
+// --- mock agent rows ---
+
+type mockAgentRows struct {
+	data    []agentStatus
+	cursor  int
+	scanErr error
+	closed  bool
+}
+
+func (r *mockAgentRows) Next() bool {
+	if r.cursor < len(r.data) {
+		r.cursor++
+		return true
+	}
+	return false
+}
+
+func (r *mockAgentRows) Scan(dest ...any) error {
+	if r.scanErr != nil {
+		return r.scanErr
+	}
+	a := r.data[r.cursor-1]
+	*dest[0].(*string) = a.NodeName
+	*dest[1].(*string) = a.AgentVersion
+	*dest[2].(*string) = a.FirstSeen
+	*dest[3].(*string) = a.LastSeen
+	*dest[4].(*bool) = a.Online
+	return nil
+}
+
+func (r *mockAgentRows) Close()                                       { r.closed = true }
+func (r *mockAgentRows) Err() error                                   { return nil }
+func (r *mockAgentRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *mockAgentRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (r *mockAgentRows) Values() ([]any, error)                       { return nil, nil }
+func (r *mockAgentRows) RawValues() [][]byte                          { return nil }
+func (r *mockAgentRows) Conn() *pgx.Conn                              { return nil }
+
+// --- agent tests ---
+
+func TestGetAgents_Success(t *testing.T) {
+	rows := &mockAgentRows{data: []agentStatus{
+		{NodeName: "node-a", AgentVersion: "1.0.0", FirstSeen: "2025-01-15 10:00:00+00", LastSeen: "2025-01-15 12:00:00+00", Online: true},
+		{NodeName: "node-b", AgentVersion: "1.0.1", FirstSeen: "2025-01-14 08:00:00+00", LastSeen: "2025-01-14 09:00:00+00", Online: false},
+	}}
+
+	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	r := gin.New()
+	r.GET("/agents", h.GetAgents)
+
+	w := doRequest(r, "GET", "/agents")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result []agentStatus
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 agents, got %d", len(result))
+	}
+	if result[0].NodeName != "node-a" || !result[0].Online {
+		t.Errorf("unexpected first agent: %+v", result[0])
+	}
+	if result[1].NodeName != "node-b" || result[1].Online {
+		t.Errorf("unexpected second agent: %+v", result[1])
+	}
+}
+
+func TestGetAgents_Empty(t *testing.T) {
+	h := NewHandlerWithDB(&mockDB{rows: &mockAgentRows{}}, testToken)
+	r := gin.New()
+	r.GET("/agents", h.GetAgents)
+
+	w := doRequest(r, "GET", "/agents")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result []agentStatus
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if len(result) != 0 {
+		t.Errorf("expected empty result, got %d items", len(result))
 	}
 }
