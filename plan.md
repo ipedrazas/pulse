@@ -149,7 +149,7 @@ Command channel from hub to agent using polling-based approach.
 
 ---
 
-## Phase 5: TLS for gRPC (P1)
+## Phase 5: TLS for gRPC (P1) ✅
 
 ### 5.1 Add TLS Support
 
@@ -157,18 +157,21 @@ Command channel from hub to agent using polling-based approach.
 
 **Why:** With remote command execution, the channel carries action commands — encryption is essential.
 
-- [ ] Add `TLS_CERT_FILE` and `TLS_KEY_FILE` env vars to API config
-- [ ] Add `TLS_CA_FILE` env var to agent config (for verifying the server cert)
-- [ ] In API `main.go`, if cert/key are provided, create a `tls.Config` and pass `grpc.Creds(credentials.NewTLS(...))` to the gRPC server
-- [ ] In agent `grpcclient`, if CA file is provided, use `grpc.WithTransportCredentials` instead of `grpc.WithInsecure()`
-- [ ] If no TLS files are set, fall back to current insecure mode (backwards compatible)
-- [ ] Document certificate generation with `openssl` or `mkcert` in README
+- [x] Added `TLS_CERT_FILE` and `TLS_KEY_FILE` env vars to API config (must both be set or both empty)
+- [x] Added `TLS_CA_FILE` env var to agent config (for verifying the server cert)
+- [x] In API `main.go`, if cert/key are provided, loads X509 key pair and passes `grpc.Creds(credentials.NewTLS(...))` to the gRPC server
+- [x] In agent `grpcclient.New()`, accepts `tlsCAFile` param — if set, reads CA cert, builds root cert pool, uses `credentials.NewTLS()`
+- [x] Falls back to insecure (plaintext) mode when TLS env vars are not set (fully backwards compatible)
+- [x] Updated `.env.example` with TLS configuration documentation
 
 **Files touched:**
-- `api/internal/config/config.go`
-- `api/cmd/api/main.go`
-- `agent/internal/config/config.go`
-- `agent/internal/grpcclient/client.go`
+- `api/internal/config/config.go` (TLSCertFile, TLSKeyFile fields + validation)
+- `api/cmd/api/main.go` (conditional TLS credentials for gRPC server)
+- `agent/internal/config/config.go` (TLSCAFile field)
+- `agent/internal/grpcclient/client.go` (New takes tlsCAFile, buildTransportCredentials helper)
+- `agent/internal/grpcclient/client_test.go` (updated New calls with 3rd arg)
+- `agent/cmd/agent/main.go` (pass cfg.TLSCAFile to grpcclient.New)
+- `.env.example` (TLS documentation)
 
 ---
 

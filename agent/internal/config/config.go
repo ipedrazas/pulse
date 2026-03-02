@@ -19,6 +19,7 @@ type Config struct {
 	MetadataResyncInterval time.Duration
 	RedactPatterns         []string
 	AllowedActions         map[string]bool
+	TLSCAFile              string
 }
 
 func Load() (*Config, error) {
@@ -40,6 +41,7 @@ func Load() (*Config, error) {
 		MetadataResyncInterval: resyncInterval,
 		RedactPatterns:         parseRedactPatterns(getEnv("ENV_REDACT_PATTERNS", defaultRedactPatterns)),
 		AllowedActions:         parseAllowedActions(getEnv("ALLOWED_ACTIONS", defaultAllowedActions)),
+		TLSCAFile:              getEnv("TLS_CA_FILE", ""),
 	}
 
 	if c.ServerAddr == "" {

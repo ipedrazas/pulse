@@ -2,9 +2,14 @@ package grpcclient
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"os"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
@@ -20,7 +25,9 @@ type Client struct {
 }
 
 // New creates a gRPC client with keepalive and retry policy.
-func New(serverAddr, token string) (*Client, error) {
+// If tlsCAFile is non-empty, the connection uses TLS with the given CA certificate;
+// otherwise it falls back to an insecure (plaintext) connection.
+func New(serverAddr, token, tlsCAFile string) (*Client, error) {
 	kacp := keepalive.ClientParameters{
 		Time:                10 * time.Second,
 		Timeout:             time.Second,
@@ -40,8 +47,13 @@ func New(serverAddr, token string) (*Client, error) {
 		}]
 	}`
 
+	transportCreds, err := buildTransportCredentials(tlsCAFile)
+	if err != nil {
+		return nil, err
+	}
+
 	conn, err := grpc.NewClient(serverAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(transportCreds),
 		grpc.WithKeepaliveParams(kacp),
 		grpc.WithDefaultServiceConfig(retryPolicy),
 	)
@@ -54,6 +66,28 @@ func New(serverAddr, token string) (*Client, error) {
 		service: monitorv1.NewMonitoringServiceClient(conn),
 		token:   token,
 	}, nil
+}
+
+// buildTransportCredentials returns TLS credentials if a CA file is provided,
+// or insecure credentials otherwise.
+func buildTransportCredentials(tlsCAFile string) (credentials.TransportCredentials, error) {
+	if tlsCAFile == "" {
+		return insecure.NewCredentials(), nil
+	}
+
+	caCert, err := os.ReadFile(tlsCAFile)
+	if err != nil {
+		return nil, fmt.Errorf("read CA file: %w", err)
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caCert) {
+		return nil, fmt.Errorf("failed to parse CA certificate from %s", tlsCAFile)
+	}
+
+	return credentials.NewTLS(&tls.Config{
+		RootCAs: pool,
+	}), nil
 }
 
 // Close closes the underlying gRPC connection.

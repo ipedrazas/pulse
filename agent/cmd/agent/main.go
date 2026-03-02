@@ -35,7 +35,7 @@ func main() {
 	}
 	defer poller.Close()
 
-	client, err := grpcclient.New(cfg.ServerAddr, cfg.MonitorToken)
+	client, err := grpcclient.New(cfg.ServerAddr, cfg.MonitorToken, cfg.TLSCAFile)
 	if err != nil {
 		slog.Error("failed to create grpc client", "error", err)
 		os.Exit(1)

@@ -11,6 +11,8 @@ type Config struct {
 	HTTPPort     string
 	MonitorToken string
 	RESTToken    string
+	TLSCertFile  string
+	TLSKeyFile   string
 }
 
 func Load() (*Config, error) {
@@ -33,6 +35,13 @@ func Load() (*Config, error) {
 		restToken = c.MonitorToken
 	}
 	c.RESTToken = restToken
+
+	c.TLSCertFile = getEnv("TLS_CERT_FILE", "")
+	c.TLSKeyFile = getEnv("TLS_KEY_FILE", "")
+
+	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
+		return nil, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must both be set or both be empty")
+	}
 
 	return c, nil
 }

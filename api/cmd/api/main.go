@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log/slog"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	"github.com/ipedrazas/pulse/api/internal/config"
 	"github.com/ipedrazas/pulse/api/internal/db"
@@ -54,9 +56,24 @@ func main() {
 	slog.Info("database connected")
 
 	// gRPC server
-	grpcSrv := grpc.NewServer(
+	grpcOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(cfg.MonitorToken)),
-	)
+	}
+
+	if cfg.TLSCertFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			slog.Error("failed to load TLS certificate", "error", err)
+			os.Exit(1)
+		}
+		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+		grpcOpts = append(grpcOpts, grpc.Creds(credentials.NewTLS(tlsCfg)))
+		slog.Info("gRPC TLS enabled", "cert", cfg.TLSCertFile)
+	} else {
+		slog.Info("gRPC TLS disabled (no TLS_CERT_FILE set)")
+	}
+
+	grpcSrv := grpc.NewServer(grpcOpts...)
 	monSvc := grpcserver.NewMonitoringService(pool)
 	monitorv1.RegisterMonitoringServiceServer(grpcSrv, monSvc)
 

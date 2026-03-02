@@ -39,6 +39,9 @@ data/
 # Go workspace sum
 go.work.sum
 
+# TLS private keys
+certs/*.key
+
 # Editor/IDE
 # .idea/
 # .vscode/

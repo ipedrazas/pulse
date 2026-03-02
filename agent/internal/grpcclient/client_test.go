@@ -8,7 +8,7 @@ import (
 )
 
 func TestNew_CreatesClient(t *testing.T) {
-	c, err := New("localhost:50051", "test-token")
+	c, err := New("localhost:50051", "test-token", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestNew_CreatesClient(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	c, err := New("localhost:50051", "test-token")
+	c, err := New("localhost:50051", "test-token", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
