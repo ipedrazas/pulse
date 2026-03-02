@@ -99,7 +99,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	// Start HTTP server
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := rest.NewHandler(pool)
+	handler := rest.NewHandler(pool, testToken)
 	handler.RegisterRoutes(router)
 
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -328,7 +328,13 @@ func TestNotFoundResponses(t *testing.T) {
 
 func httpGet(t *testing.T, addr, path string) []byte {
 	t.Helper()
-	resp, err := http.Get(fmt.Sprintf("http://%s%s", addr, path))
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s%s", addr, path), nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s failed: %v", path, err)
 	}
@@ -348,7 +354,13 @@ func httpGet(t *testing.T, addr, path string) []byte {
 
 func httpGetCode(t *testing.T, addr, path string) int {
 	t.Helper()
-	resp, err := http.Get(fmt.Sprintf("http://%s%s", addr, path))
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s%s", addr, path), nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s failed: %v", path, err)
 	}

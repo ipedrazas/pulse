@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
+
+const defaultRedactPatterns = "PASSWORD,SECRET,KEY,TOKEN,CREDENTIAL"
 
 type Config struct {
 	ServerAddr             string
@@ -13,6 +16,7 @@ type Config struct {
 	NodeName               string
 	PollDelay              time.Duration
 	MetadataResyncInterval time.Duration
+	RedactPatterns         []string
 }
 
 func Load() (*Config, error) {
@@ -32,6 +36,7 @@ func Load() (*Config, error) {
 		NodeName:               getEnv("PROXMOX_NODE_NAME", ""),
 		PollDelay:              pollDelay,
 		MetadataResyncInterval: resyncInterval,
+		RedactPatterns:         parseRedactPatterns(getEnv("ENV_REDACT_PATTERNS", defaultRedactPatterns)),
 	}
 
 	if c.ServerAddr == "" {
@@ -52,6 +57,21 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func parseRedactPatterns(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	patterns := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			patterns = append(patterns, strings.ToUpper(p))
+		}
+	}
+	return patterns
 }
 
 func parseDurationSeconds(envKey, fallback string) (time.Duration, error) {

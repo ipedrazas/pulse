@@ -10,6 +10,7 @@ type Config struct {
 	GRPCPort     string
 	HTTPPort     string
 	MonitorToken string
+	RESTToken    string
 }
 
 func Load() (*Config, error) {
@@ -26,6 +27,12 @@ func Load() (*Config, error) {
 	if c.MonitorToken == "" {
 		return nil, fmt.Errorf("MONITOR_TOKEN is required")
 	}
+
+	restToken := getEnv("REST_TOKEN", "")
+	if restToken == "" {
+		restToken = c.MonitorToken
+	}
+	c.RESTToken = restToken
 
 	return c, nil
 }

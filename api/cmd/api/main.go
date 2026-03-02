@@ -69,7 +69,7 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	handler := rest.NewHandler(pool)
+	handler := rest.NewHandler(pool, cfg.RESTToken)
 	handler.RegisterRoutes(router)
 
 	httpSrv := &http.Server{

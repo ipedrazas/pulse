@@ -18,6 +18,8 @@ func marshalOrEmpty(v any) []byte {
 	return b
 }
 
+const testToken = "test-secret"
+
 func init() {
 	gin.SetMode(gin.TestMode)
 }
@@ -124,7 +126,7 @@ func doRequest(r *gin.Engine, method, path string) *httptest.ResponseRecorder {
 // --- tests ---
 
 func TestNewHandler(t *testing.T) {
-	h := NewHandler(nil)
+	h := NewHandler(nil, testToken)
 	if h == nil {
 		t.Fatal("expected non-nil handler")
 	}
@@ -132,14 +134,14 @@ func TestNewHandler(t *testing.T) {
 
 func TestNewHandlerWithDB(t *testing.T) {
 	db := &mockDB{}
-	h := NewHandlerWithDB(db)
+	h := NewHandlerWithDB(db, testToken)
 	if h == nil || h.db != db {
 		t.Fatal("expected handler with mock DB")
 	}
 }
 
 func TestRegisterRoutes(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{})
+	h := NewHandlerWithDB(&mockDB{}, testToken)
 	r := gin.New()
 	h.RegisterRoutes(r)
 
@@ -167,7 +169,7 @@ func TestRegisterRoutes(t *testing.T) {
 }
 
 func TestHealthz_Healthy(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{})
+	h := NewHandlerWithDB(&mockDB{}, testToken)
 	r := gin.New()
 	r.GET("/healthz", h.Healthz)
 
@@ -185,7 +187,7 @@ func TestHealthz_Healthy(t *testing.T) {
 }
 
 func TestHealthz_Unhealthy(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{pingErr: errors.New("db down")})
+	h := NewHandlerWithDB(&mockDB{pingErr: errors.New("db down")}, testToken)
 	r := gin.New()
 	r.GET("/healthz", h.Healthz)
 
@@ -203,7 +205,7 @@ func TestGetStatus_Success(t *testing.T) {
 		{ContainerID: "c1", NodeName: "n1", Name: "nginx", ImageTag: "nginx:latest", Status: &status, UptimeSeconds: &uptime},
 	}}
 
-	h := NewHandlerWithDB(&mockDB{rows: rows})
+	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
 	r := gin.New()
 	r.GET("/status", h.GetStatus)
 
@@ -221,7 +223,7 @@ func TestGetStatus_Success(t *testing.T) {
 }
 
 func TestGetStatus_QueryError(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("query failed")})
+	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("query failed")}, testToken)
 	r := gin.New()
 	r.GET("/status", h.GetStatus)
 
@@ -233,7 +235,7 @@ func TestGetStatus_QueryError(t *testing.T) {
 }
 
 func TestGetStatus_Empty(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}})
+	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}}, testToken)
 	r := gin.New()
 	r.GET("/status", h.GetStatus)
 
@@ -253,7 +255,7 @@ func TestGetStatus_Empty(t *testing.T) {
 func TestGetContainerStatus_Found(t *testing.T) {
 	cs := containerStatus{ContainerID: "c1", NodeName: "n1", Name: "test", ImageTag: "img:v1", Status: ptr("running"), UptimeSeconds: ptr(int64(100))}
 
-	h := NewHandlerWithDB(&mockDB{row: &mockRow{cs: &cs}})
+	h := NewHandlerWithDB(&mockDB{row: &mockRow{cs: &cs}}, testToken)
 	r := gin.New()
 	r.GET("/status/:container", h.GetContainerStatus)
 
@@ -271,7 +273,7 @@ func TestGetContainerStatus_Found(t *testing.T) {
 }
 
 func TestGetContainerStatus_NotFound(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{row: &mockRow{err: pgx.ErrNoRows}})
+	h := NewHandlerWithDB(&mockDB{row: &mockRow{err: pgx.ErrNoRows}}, testToken)
 	r := gin.New()
 	r.GET("/status/:container", h.GetContainerStatus)
 
@@ -289,7 +291,7 @@ func TestGetNodes_Success(t *testing.T) {
 		{ContainerID: "c3", NodeName: "node-b", Name: "postgres", ImageTag: "pg:16", Status: ptr("running")},
 	}}
 
-	h := NewHandlerWithDB(&mockDB{rows: rows})
+	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
 	r := gin.New()
 	r.GET("/nodes", h.GetNodes)
 
@@ -313,7 +315,7 @@ func TestGetNodes_Success(t *testing.T) {
 }
 
 func TestGetNodes_QueryError(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("db error")})
+	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("db error")}, testToken)
 	r := gin.New()
 	r.GET("/nodes", h.GetNodes)
 
@@ -329,7 +331,7 @@ func TestGetNode_Found(t *testing.T) {
 		{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running")},
 	}}
 
-	h := NewHandlerWithDB(&mockDB{rows: rows})
+	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
 	r := gin.New()
 	r.GET("/nodes/:node", h.GetNode)
 
@@ -347,7 +349,7 @@ func TestGetNode_Found(t *testing.T) {
 }
 
 func TestGetNode_NotFound(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}})
+	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}}, testToken)
 	r := gin.New()
 	r.GET("/nodes/:node", h.GetNode)
 
@@ -359,7 +361,7 @@ func TestGetNode_NotFound(t *testing.T) {
 }
 
 func TestGetNode_QueryError(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("db error")})
+	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("db error")}, testToken)
 	r := gin.New()
 	r.GET("/nodes/:node", h.GetNode)
 

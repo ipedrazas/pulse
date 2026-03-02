@@ -20,24 +20,28 @@ type DB interface {
 }
 
 type Handler struct {
-	db DB
+	db    DB
+	token string
 }
 
-func NewHandler(pool *pgxpool.Pool) *Handler {
-	return &Handler{db: pool}
+func NewHandler(pool *pgxpool.Pool, token string) *Handler {
+	return &Handler{db: pool, token: token}
 }
 
 // NewHandlerWithDB creates a handler with an explicit DB interface (useful for testing).
-func NewHandlerWithDB(db DB) *Handler {
-	return &Handler{db: db}
+func NewHandlerWithDB(db DB, token string) *Handler {
+	return &Handler{db: db, token: token}
 }
 
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.GET("/healthz", h.Healthz)
-	r.GET("/status", h.GetStatus)
-	r.GET("/status/:container", h.GetContainerStatus)
-	r.GET("/nodes", h.GetNodes)
-	r.GET("/nodes/:node", h.GetNode)
+
+	auth := r.Group("/")
+	auth.Use(BearerAuthMiddleware(h.token))
+	auth.GET("/status", h.GetStatus)
+	auth.GET("/status/:container", h.GetContainerStatus)
+	auth.GET("/nodes", h.GetNodes)
+	auth.GET("/nodes/:node", h.GetNode)
 }
 
 func (h *Handler) Healthz(c *gin.Context) {

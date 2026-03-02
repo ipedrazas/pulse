@@ -13,6 +13,7 @@ services:
       GRPC_PORT: "50051"
       HTTP_PORT: "8080"
       MONITOR_TOKEN: "${MONITOR_TOKEN}"
+      REST_TOKEN: "${REST_TOKEN:-${MONITOR_TOKEN}}"
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -43,6 +44,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    environment:
+      REST_TOKEN: "${REST_TOKEN:-${MONITOR_TOKEN}}"
     depends_on:
       - api
     restart: unless-stopped

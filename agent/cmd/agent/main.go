@@ -12,6 +12,7 @@ import (
 	"github.com/ipedrazas/pulse/agent/internal/debounce"
 	"github.com/ipedrazas/pulse/agent/internal/docker"
 	"github.com/ipedrazas/pulse/agent/internal/grpcclient"
+	"github.com/ipedrazas/pulse/agent/internal/redact"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
 
@@ -74,12 +75,12 @@ func main() {
 		resyncC = resyncTicker.C
 	}
 
-	pollOnce(ctx, poller, client, tracker, cfg.NodeName)
+	pollOnce(ctx, poller, client, tracker, cfg.NodeName, cfg.RedactPatterns)
 
 	for {
 		select {
 		case <-tick.C:
-			pollOnce(ctx, poller, client, tracker, cfg.NodeName)
+			pollOnce(ctx, poller, client, tracker, cfg.NodeName, cfg.RedactPatterns)
 		case <-resyncC:
 			slog.Info("periodic metadata resync — clearing debounce hashes")
 			tracker.Reset()
@@ -90,7 +91,7 @@ func main() {
 	}
 }
 
-func pollOnce(ctx context.Context, poller *docker.Poller, client *grpcclient.Client, tracker *debounce.Tracker, nodeName string) {
+func pollOnce(ctx context.Context, poller *docker.Poller, client *grpcclient.Client, tracker *debounce.Tracker, nodeName string, redactPatterns []string) {
 	containers, err := poller.Poll(ctx)
 	if err != nil {
 		slog.Error("poll failed", "error", err)
@@ -118,7 +119,7 @@ func pollOnce(ctx context.Context, poller *docker.Poller, client *grpcclient.Cli
 				NodeName:    nodeName,
 				Name:        c.Name,
 				Image:       c.Image,
-				Envs:        c.Envs,
+				Envs:        redact.Envs(c.Envs, redactPatterns),
 				Mounts:      mounts,
 				Labels:      c.Labels,
 			}
