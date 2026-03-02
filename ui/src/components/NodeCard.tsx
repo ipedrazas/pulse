@@ -1,11 +1,12 @@
-import type { NodeContainers } from "../types";
+import type { ContainerStatus, NodeContainers } from "../types";
 import { ContainerRow } from "./ContainerRow";
 
 interface NodeCardProps {
   node: NodeContainers;
+  onSelectContainer: (container: ContainerStatus) => void;
 }
 
-export function NodeCard({ node }: NodeCardProps) {
+export function NodeCard({ node, onSelectContainer }: NodeCardProps) {
   const running = node.containers.filter((c) => c.status === "running").length;
   const total = node.containers.length;
 
@@ -20,7 +21,7 @@ export function NodeCard({ node }: NodeCardProps) {
 
       <div>
         {node.containers.map((c) => (
-          <ContainerRow key={c.container_id} container={c} />
+          <ContainerRow key={c.container_id} container={c} onSelect={onSelectContainer} />
         ))}
       </div>
     </div>

@@ -6,14 +6,19 @@ import { StatusDot } from "./StatusDot";
 
 interface ContainerRowProps {
   container: ContainerStatus;
+  onSelect: (container: ContainerStatus) => void;
 }
 
-export function ContainerRow({ container }: ContainerRowProps) {
+export function ContainerRow({ container, onSelect }: ContainerRowProps) {
   const statusText = container.status ?? "unknown";
   const statusColor = containerStatusTextColor(container.status);
 
   return (
-    <div className="flex items-center gap-3 border-t border-surface-border px-4 py-2.5 text-sm">
+    <button
+      type="button"
+      onClick={() => onSelect(container)}
+      className="flex items-center gap-3 border-t border-surface-border px-4 py-2.5 text-sm w-full text-left hover:bg-white/5 transition-colors cursor-pointer"
+    >
       <StatusDot status={container.status} />
 
       <div className="min-w-0 flex-1">
@@ -32,6 +37,6 @@ export function ContainerRow({ container }: ContainerRowProps) {
       <span className="text-xs text-gray-500 w-20 text-right shrink-0 hidden sm:block">
         {formatLastSeen(container.last_seen)}
       </span>
-    </div>
+    </button>
   );
 }

@@ -1,0 +1,76 @@
+import type { ContainerStatus } from "../types";
+import { containerStatusColor, containerStatusTextColor } from "../utils/containerStatusColor";
+import { formatLastSeen } from "../utils/formatLastSeen";
+import { formatUptime } from "../utils/formatUptime";
+
+interface ContainerDetailProps {
+  container: ContainerStatus;
+  onClose: () => void;
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between items-start gap-4 py-2 border-b border-surface-border">
+      <span className="text-xs text-gray-500 shrink-0">{label}</span>
+      <span className="text-sm text-gray-200 text-right break-all">{value}</span>
+    </div>
+  );
+}
+
+export function ContainerDetail({ container, onClose }: ContainerDetailProps) {
+  const statusText = container.status ?? "unknown";
+  const statusColor = containerStatusColor(container.status);
+  const statusTextColor = containerStatusTextColor(container.status);
+
+  return (
+    <div
+      role="dialog"
+      className="fixed inset-0 z-20 flex justify-end"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      {/* Backdrop — clickable to dismiss */}
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40 cursor-default"
+        onClick={onClose}
+        aria-label="Close panel"
+      />
+
+      {/* Panel */}
+      <section className="relative w-full max-w-md bg-surface-bg border-l border-surface-border h-full overflow-y-auto animate-slide-in">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-surface-border bg-surface-bg/90 backdrop-blur-sm">
+          <h2 className="text-base font-semibold text-gray-100 truncate pr-4">{container.name}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-300 text-xl leading-none shrink-0"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-5">
+          {/* Status badge */}
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-block h-3 w-3 rounded-full ${statusColor} ${container.status === "running" ? "animate-pulse_dot" : ""}`}
+            />
+            <span className={`text-sm font-medium ${statusTextColor}`}>{statusText}</span>
+          </div>
+
+          {/* Details */}
+          <div>
+            <DetailRow label="Container ID" value={container.container_id} />
+            <DetailRow label="Node" value={container.node_name} />
+            <DetailRow label="Image" value={container.image_tag} />
+            <DetailRow label="Uptime" value={formatUptime(container.uptime_seconds)} />
+            <DetailRow label="Last seen" value={formatLastSeen(container.last_seen)} />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}

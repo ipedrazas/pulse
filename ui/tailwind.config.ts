@@ -13,11 +13,16 @@ export default {
       },
       animation: {
         pulse_dot: "pulse_dot 2s ease-in-out infinite",
+        "slide-in": "slide-in 0.2s ease-out",
       },
       keyframes: {
         pulse_dot: {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.5" },
+        },
+        "slide-in": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
         },
       },
     },

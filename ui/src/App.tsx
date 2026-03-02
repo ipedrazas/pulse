@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ContainerDetail } from "./components/ContainerDetail";
 import { EmptyState } from "./components/EmptyState";
 import { Header } from "./components/Header";
 import { NodeGrid } from "./components/NodeGrid";
@@ -6,7 +7,7 @@ import { SearchBar } from "./components/SearchBar";
 import { Spinner } from "./components/Spinner";
 import { useHealth } from "./hooks/useHealth";
 import { useNodes } from "./hooks/useNodes";
-import type { NodeContainers } from "./types";
+import type { ContainerStatus, NodeContainers } from "./types";
 
 function filterNodes(nodes: NodeContainers[], query: string): NodeContainers[] {
   if (!query) return nodes;
@@ -28,16 +29,26 @@ function filterNodes(nodes: NodeContainers[], query: string): NodeContainers[] {
 
 export default function App() {
   const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<ContainerStatus | null>(null);
   const health = useHealth();
   const nodes = useNodes();
 
   const healthy = health.data != null ? health.data.status === "healthy" : null;
+  const allNodes = nodes.data ?? [];
 
-  const filtered = useMemo(() => filterNodes(nodes.data ?? [], search), [nodes.data, search]);
+  const totalNodes = allNodes.length;
+  const totalContainers = allNodes.reduce((sum, n) => sum + n.containers.length, 0);
+
+  const filtered = useMemo(() => filterNodes(allNodes, search), [allNodes, search]);
 
   return (
     <>
-      <Header healthy={healthy} lastUpdated={nodes.lastUpdated} />
+      <Header
+        healthy={healthy}
+        lastUpdated={nodes.lastUpdated}
+        totalNodes={totalNodes}
+        totalContainers={totalContainers}
+      />
 
       <main className="mx-auto max-w-7xl px-4 py-6 space-y-4">
         <SearchBar value={search} onChange={setSearch} />
@@ -59,9 +70,11 @@ export default function App() {
             />
           )
         ) : (
-          <NodeGrid nodes={filtered} />
+          <NodeGrid nodes={filtered} onSelectContainer={setSelected} />
         )}
       </main>
+
+      {selected && <ContainerDetail container={selected} onClose={() => setSelected(null)} />}
     </>
   );
 }
