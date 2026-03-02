@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 func TestLoad_RequiresServerAddr(t *testing.T) {
@@ -70,4 +71,85 @@ func TestGetEnv_Value(t *testing.T) {
 	if got := getEnv("TEST_GETENV_KEY", "default"); got != "myval" {
 		t.Errorf("expected 'myval', got %s", got)
 	}
+}
+
+// --- PollDelay tests ---
+
+func TestLoad_PollDelayDefault(t *testing.T) {
+	setRequiredEnvs(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.PollDelay != 0 {
+		t.Errorf("expected PollDelay 0, got %v", cfg.PollDelay)
+	}
+}
+
+func TestLoad_PollDelayCustom(t *testing.T) {
+	setRequiredEnvs(t)
+	t.Setenv("POLL_DELAY_SECONDS", "10")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.PollDelay != 10*time.Second {
+		t.Errorf("expected PollDelay 10s, got %v", cfg.PollDelay)
+	}
+}
+
+func TestLoad_PollDelayInvalid(t *testing.T) {
+	setRequiredEnvs(t)
+	t.Setenv("POLL_DELAY_SECONDS", "abc")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid POLL_DELAY_SECONDS")
+	}
+}
+
+// --- MetadataResyncInterval tests ---
+
+func TestLoad_MetadataResyncDefault(t *testing.T) {
+	setRequiredEnvs(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MetadataResyncInterval != 3600*time.Second {
+		t.Errorf("expected MetadataResyncInterval 3600s, got %v", cfg.MetadataResyncInterval)
+	}
+}
+
+func TestLoad_MetadataResyncCustom(t *testing.T) {
+	setRequiredEnvs(t)
+	t.Setenv("METADATA_RESYNC_SECONDS", "120")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.MetadataResyncInterval != 120*time.Second {
+		t.Errorf("expected MetadataResyncInterval 120s, got %v", cfg.MetadataResyncInterval)
+	}
+}
+
+func TestLoad_MetadataResyncInvalid(t *testing.T) {
+	setRequiredEnvs(t)
+	t.Setenv("METADATA_RESYNC_SECONDS", "not-a-number")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid METADATA_RESYNC_SECONDS")
+	}
+}
+
+func setRequiredEnvs(t *testing.T) {
+	t.Helper()
+	t.Setenv("SERVER_ADDR", "api:50051")
+	t.Setenv("MONITOR_TOKEN", "secret")
+	t.Setenv("PROXMOX_NODE_NAME", "pve1")
 }

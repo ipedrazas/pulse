@@ -21,12 +21,25 @@ func NewTracker() *Tracker {
 }
 
 // HasChanged returns true if the container's metadata hash differs from the
-// last seen value, or if the container is new. It updates the stored hash.
+// last seen value, or if the container is new. It does NOT store the hash;
+// call Commit after a successful sync to persist the new hash.
 func (t *Tracker) HasChanged(info docker.ContainerInfo) bool {
 	h := computeHash(info)
 	prev, exists := t.hashes[info.ID]
-	t.hashes[info.ID] = h
 	return !exists || prev != h
+}
+
+// Commit stores the current hash for the container. Call this after a
+// successful metadata sync so that subsequent HasChanged calls see the
+// up-to-date value.
+func (t *Tracker) Commit(info docker.ContainerInfo) {
+	t.hashes[info.ID] = computeHash(info)
+}
+
+// Reset clears all stored hashes, forcing every container to be treated as
+// new on the next poll. Useful for periodic metadata resync.
+func (t *Tracker) Reset() {
+	clear(t.hashes)
 }
 
 // Prune removes tracked containers that are no longer in the given set.

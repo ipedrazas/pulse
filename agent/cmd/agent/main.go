@@ -50,9 +50,29 @@ func main() {
 
 	slog.Info("agent starting", "server", cfg.ServerAddr, "node", cfg.NodeName)
 
+	// Startup delay — gives other services time to become ready.
+	if cfg.PollDelay > 0 {
+		slog.Info("waiting before first poll", "delay", cfg.PollDelay)
+		select {
+		case <-time.After(cfg.PollDelay):
+		case sig := <-quit:
+			slog.Info("shutting down during startup delay", "signal", sig.String())
+			return
+		}
+	}
+
 	// Run first poll immediately, then on interval
 	tick := time.NewTicker(pollInterval)
 	defer tick.Stop()
+
+	// Periodic metadata resync ticker. A nil channel is never selected, so
+	// when MetadataResyncInterval is 0 the resync branch is effectively disabled.
+	var resyncC <-chan time.Time
+	if cfg.MetadataResyncInterval > 0 {
+		resyncTicker := time.NewTicker(cfg.MetadataResyncInterval)
+		defer resyncTicker.Stop()
+		resyncC = resyncTicker.C
+	}
 
 	pollOnce(ctx, poller, client, tracker, cfg.NodeName)
 
@@ -60,6 +80,9 @@ func main() {
 		select {
 		case <-tick.C:
 			pollOnce(ctx, poller, client, tracker, cfg.NodeName)
+		case <-resyncC:
+			slog.Info("periodic metadata resync — clearing debounce hashes")
+			tracker.Reset()
 		case sig := <-quit:
 			slog.Info("shutting down", "signal", sig.String())
 			return
@@ -103,6 +126,7 @@ func pollOnce(ctx context.Context, poller *docker.Poller, client *grpcclient.Cli
 				slog.Error("metadata sync failed", "container_id", c.ID, "error", err)
 				continue
 			}
+			tracker.Commit(c)
 			slog.Info("metadata synced", "container_id", c.ID, "name", c.Name)
 		}
 

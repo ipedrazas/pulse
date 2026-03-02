@@ -57,6 +57,8 @@ services:
       SERVER_ADDR: "${SERVER_ADDR}"
       MONITOR_TOKEN: "${MONITOR_TOKEN}"
       PROXMOX_NODE_NAME: "${PROXMOX_NODE_NAME}"
+      POLL_DELAY_SECONDS: "${POLL_DELAY_SECONDS:-0}"
+      METADATA_RESYNC_SECONDS: "${METADATA_RESYNC_SECONDS:-3600}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     # network_mode: "host"
