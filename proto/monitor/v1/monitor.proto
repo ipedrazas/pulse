@@ -7,6 +7,9 @@ option go_package = "github.com/ipedrazas/pulse/proto/monitor/v1;monitorv1";
 service MonitoringService {
   rpc ReportHeartbeat(ReportHeartbeatRequest) returns (ReportHeartbeatResponse);
   rpc SyncMetadata(SyncMetadataRequest) returns (SyncMetadataResponse);
+  rpc GetPendingCommands(GetPendingCommandsRequest) returns (GetPendingCommandsResponse);
+  rpc ReportCommandResult(ReportCommandResultRequest) returns (ReportCommandResultResponse);
+  rpc ReportRemovedContainers(ReportRemovedContainersRequest) returns (ReportRemovedContainersResponse);
 }
 
 message ReportHeartbeatRequest {
@@ -33,4 +36,42 @@ message MountInfo {
   string source = 1;
   string destination = 2;
   string mode = 3;
+}
+
+// Command dispatch — agent polls hub for pending commands.
+
+message GetPendingCommandsRequest {
+  string node_name = 1;
+}
+
+message Command {
+  string command_id = 1;
+  string action = 2;
+  string target = 3;
+  map<string, string> params = 4;
+}
+
+message GetPendingCommandsResponse {
+  repeated Command commands = 1;
+}
+
+message ReportCommandResultRequest {
+  string command_id = 1;
+  string node_name = 2;
+  bool success = 3;
+  string output = 4;
+  int64 duration_ms = 5;
+}
+
+message ReportCommandResultResponse {}
+
+// Stale container cleanup — agent reports containers that no longer exist.
+
+message ReportRemovedContainersRequest {
+  string node_name = 1;
+  repeated string container_ids = 2;
+}
+
+message ReportRemovedContainersResponse {
+  int32 removed_count = 1;
 }

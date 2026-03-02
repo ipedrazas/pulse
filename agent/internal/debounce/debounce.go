@@ -42,13 +42,17 @@ func (t *Tracker) Reset() {
 	clear(t.hashes)
 }
 
-// Prune removes tracked containers that are no longer in the given set.
-func (t *Tracker) Prune(activeIDs map[string]struct{}) {
+// Prune removes tracked containers that are no longer in the given set and
+// returns the IDs that were removed.
+func (t *Tracker) Prune(activeIDs map[string]struct{}) []string {
+	var removed []string
 	for id := range t.hashes {
 		if _, ok := activeIDs[id]; !ok {
+			removed = append(removed, id)
 			delete(t.hashes, id)
 		}
 	}
+	return removed
 }
 
 func computeHash(info docker.ContainerInfo) string {

@@ -97,7 +97,19 @@ func TestTracker_Prune(t *testing.T) {
 	}
 
 	// Only "a" is still active
-	tr.Prune(map[string]struct{}{"a": {}})
+	removed := tr.Prune(map[string]struct{}{"a": {}})
+
+	// Should return the removed IDs
+	if len(removed) != 2 {
+		t.Fatalf("expected 2 removed IDs, got %d", len(removed))
+	}
+	removedSet := map[string]bool{}
+	for _, id := range removed {
+		removedSet[id] = true
+	}
+	if !removedSet["b"] || !removedSet["c"] {
+		t.Fatalf("expected b and c to be removed, got %v", removed)
+	}
 
 	// "b" should be treated as new again
 	if !tr.HasChanged(makeInfo("b", "img", nil, nil)) {

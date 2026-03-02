@@ -43,6 +43,9 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	auth.GET("/nodes", h.GetNodes)
 	auth.GET("/nodes/:node", h.GetNode)
 	auth.GET("/nodes/:node/stacks", h.GetNodeStacks)
+	auth.POST("/nodes/:node/actions", h.CreateAction)
+	auth.GET("/nodes/:node/actions", h.ListActions)
+	auth.GET("/nodes/:node/actions/:id", h.GetAction)
 }
 
 // scannable is satisfied by both pgx.Rows (current row) and pgx.Row.
@@ -106,7 +109,8 @@ LEFT JOIN LATERAL (
   WHERE container_id = c.container_id
   ORDER BY time DESC
   LIMIT 1
-) h ON true`
+) h ON true
+WHERE c.removed_at IS NULL`
 
 func (h *Handler) GetStatus(c *gin.Context) {
 	rows, err := h.db.Query(c.Request.Context(), statusQuery)
@@ -132,7 +136,7 @@ func (h *Handler) GetStatus(c *gin.Context) {
 func (h *Handler) GetContainerStatus(c *gin.Context) {
 	containerID := c.Param("container")
 
-	row := h.db.QueryRow(c.Request.Context(), statusQuery+" WHERE c.container_id = $1", containerID)
+	row := h.db.QueryRow(c.Request.Context(), statusQuery+" AND c.container_id = $1", containerID)
 
 	cs, err := scanContainer(row)
 	if err != nil {
@@ -181,7 +185,7 @@ func (h *Handler) GetNodes(c *gin.Context) {
 func (h *Handler) GetNode(c *gin.Context) {
 	node := c.Param("node")
 
-	rows, err := h.db.Query(c.Request.Context(), statusQuery+" WHERE c.node_name = $1 ORDER BY c.name", node)
+	rows, err := h.db.Query(c.Request.Context(), statusQuery+" AND c.node_name = $1 ORDER BY c.name", node)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -214,7 +218,7 @@ type composeStack struct {
 func (h *Handler) GetNodeStacks(c *gin.Context) {
 	node := c.Param("node")
 
-	rows, err := h.db.Query(c.Request.Context(), statusQuery+" WHERE c.node_name = $1 ORDER BY c.compose_project, c.name", node)
+	rows, err := h.db.Query(c.Request.Context(), statusQuery+" AND c.node_name = $1 ORDER BY c.compose_project, c.name", node)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -250,4 +254,130 @@ func (h *Handler) GetNodeStacks(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, results)
+}
+
+// --- Actions (command dispatch) ---
+
+var allowedActions = map[string]bool{
+	"compose_update":  true,
+	"compose_restart": true,
+}
+
+type createActionRequest struct {
+	Action string            `json:"action" binding:"required"`
+	Target string            `json:"target"`
+	Params map[string]string `json:"params"`
+}
+
+type actionResponse struct {
+	CommandID  string            `json:"command_id"`
+	NodeName   string            `json:"node_name"`
+	Action     string            `json:"action"`
+	Target     string            `json:"target"`
+	Params     map[string]string `json:"params"`
+	Status     string            `json:"status"`
+	Output     string            `json:"output"`
+	DurationMs int64             `json:"duration_ms"`
+	CreatedAt  string            `json:"created_at"`
+	UpdatedAt  string            `json:"updated_at"`
+}
+
+func (h *Handler) CreateAction(c *gin.Context) {
+	node := c.Param("node")
+
+	var req createActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "action is required"})
+		return
+	}
+
+	if !allowedActions[req.Action] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown action: " + req.Action})
+		return
+	}
+
+	paramsJSON, _ := json.Marshal(req.Params)
+
+	row := h.db.QueryRow(c.Request.Context(),
+		`INSERT INTO commands (node_name, action, target, params)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING command_id, node_name, action, target, params, status, output, duration_ms,
+		           created_at::text, updated_at::text`,
+		node, req.Action, req.Target, paramsJSON,
+	)
+
+	ar, err := scanAction(row)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, ar)
+}
+
+func (h *Handler) ListActions(c *gin.Context) {
+	node := c.Param("node")
+
+	rows, err := h.db.Query(c.Request.Context(),
+		`SELECT command_id, node_name, action, target, params, status, output, duration_ms,
+		        created_at::text, updated_at::text
+		 FROM commands
+		 WHERE node_name = $1
+		 ORDER BY created_at DESC
+		 LIMIT 50`,
+		node,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	results := []actionResponse{}
+	for rows.Next() {
+		ar, err := scanAction(rows)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		results = append(results, ar)
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+
+func (h *Handler) GetAction(c *gin.Context) {
+	node := c.Param("node")
+	id := c.Param("id")
+
+	row := h.db.QueryRow(c.Request.Context(),
+		`SELECT command_id, node_name, action, target, params, status, output, duration_ms,
+		        created_at::text, updated_at::text
+		 FROM commands
+		 WHERE command_id = $1 AND node_name = $2`,
+		id, node,
+	)
+
+	ar, err := scanAction(row)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "action not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, ar)
+}
+
+func scanAction(s scannable) (actionResponse, error) {
+	var ar actionResponse
+	var paramsJSON []byte
+	err := s.Scan(
+		&ar.CommandID, &ar.NodeName, &ar.Action, &ar.Target,
+		&paramsJSON, &ar.Status, &ar.Output, &ar.DurationMs,
+		&ar.CreatedAt, &ar.UpdatedAt,
+	)
+	if err != nil {
+		return ar, err
+	}
+	_ = json.Unmarshal(paramsJSON, &ar.Params)
+	return ar, nil
 }

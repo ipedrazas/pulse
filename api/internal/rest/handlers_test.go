@@ -148,25 +148,29 @@ func TestRegisterRoutes(t *testing.T) {
 	h.RegisterRoutes(r)
 
 	routes := r.Routes()
-	expected := map[string]string{
-		"/healthz":            "GET",
-		"/status":             "GET",
-		"/status/:container":  "GET",
-		"/nodes":              "GET",
-		"/nodes/:node":        "GET",
-		"/nodes/:node/stacks": "GET",
+	type routeKey struct {
+		method, path string
+	}
+	expected := []routeKey{
+		{"GET", "/healthz"},
+		{"GET", "/status"},
+		{"GET", "/status/:container"},
+		{"GET", "/nodes"},
+		{"GET", "/nodes/:node"},
+		{"GET", "/nodes/:node/stacks"},
+		{"POST", "/nodes/:node/actions"},
+		{"GET", "/nodes/:node/actions"},
+		{"GET", "/nodes/:node/actions/:id"},
 	}
 
-	found := make(map[string]bool)
+	registered := make(map[routeKey]bool)
 	for _, route := range routes {
-		if method, ok := expected[route.Path]; ok && route.Method == method {
-			found[route.Path] = true
-		}
+		registered[routeKey{route.Method, route.Path}] = true
 	}
 
-	for path := range expected {
-		if !found[path] {
-			t.Errorf("route %s not registered", path)
+	for _, rk := range expected {
+		if !registered[rk] {
+			t.Errorf("route %s %s not registered", rk.method, rk.path)
 		}
 	}
 }

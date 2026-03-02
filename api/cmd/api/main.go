@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,7 +57,27 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(cfg.MonitorToken)),
 	)
-	monitorv1.RegisterMonitoringServiceServer(grpcSrv, grpcserver.NewMonitoringService(pool))
+	monSvc := grpcserver.NewMonitoringService(pool)
+	monitorv1.RegisterMonitoringServiceServer(grpcSrv, monSvc)
+
+	// Background sweeper: mark containers stale if no heartbeat in 48h.
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				swept, err := monSvc.SweepStaleContainers(ctx, 48*time.Hour)
+				if err != nil {
+					slog.Error("stale container sweep failed", "error", err)
+				} else if swept > 0 {
+					slog.Info("stale containers swept", "count", swept)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {

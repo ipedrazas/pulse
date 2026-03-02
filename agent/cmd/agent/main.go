@@ -11,6 +11,7 @@ import (
 	"github.com/ipedrazas/pulse/agent/internal/config"
 	"github.com/ipedrazas/pulse/agent/internal/debounce"
 	"github.com/ipedrazas/pulse/agent/internal/docker"
+	"github.com/ipedrazas/pulse/agent/internal/executor"
 	"github.com/ipedrazas/pulse/agent/internal/grpcclient"
 	"github.com/ipedrazas/pulse/agent/internal/redact"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
@@ -76,11 +77,13 @@ func main() {
 	}
 
 	pollOnce(ctx, poller, client, tracker, cfg.NodeName, cfg.RedactPatterns)
+	executeCommands(ctx, client, poller, cfg)
 
 	for {
 		select {
 		case <-tick.C:
 			pollOnce(ctx, poller, client, tracker, cfg.NodeName, cfg.RedactPatterns)
+			executeCommands(ctx, client, poller, cfg)
 		case <-resyncC:
 			slog.Info("periodic metadata resync — clearing debounce hashes")
 			tracker.Reset()
@@ -138,8 +141,74 @@ func pollOnce(ctx context.Context, poller *docker.Poller, client *grpcclient.Cli
 		}
 	}
 
-	// Clean up hashes for removed containers
-	tracker.Prune(activeIDs)
+	// Clean up hashes for removed containers and report them to the hub
+	removedIDs := tracker.Prune(activeIDs)
+	if len(removedIDs) > 0 {
+		slog.Info("containers removed from node", "count", len(removedIDs), "ids", removedIDs)
+		if err := client.ReportRemovedContainers(ctx, nodeName, removedIDs); err != nil {
+			slog.Error("failed to report removed containers", "error", err)
+		}
+	}
 
 	slog.Debug("poll complete", "containers", len(containers))
+}
+
+func executeCommands(ctx context.Context, client *grpcclient.Client, poller *docker.Poller, cfg *config.Config) {
+	commands, err := client.GetPendingCommands(ctx, cfg.NodeName)
+	if err != nil {
+		slog.Error("failed to fetch pending commands", "error", err)
+		return
+	}
+	if len(commands) == 0 {
+		return
+	}
+
+	// Build a lookup from compose project → working directory using
+	// the labels already available from local Docker containers.
+	dirLookup := buildComposeDirLookup(ctx, poller)
+
+	for _, cmd := range commands {
+		slog.Info("executing command", "command_id", cmd.CommandId, "action", cmd.Action, "target", cmd.Target)
+
+		result := executor.Run(ctx, cmd, cfg.AllowedActions, dirLookup)
+
+		if err := client.ReportCommandResult(ctx, &monitorv1.ReportCommandResultRequest{
+			CommandId:  cmd.CommandId,
+			NodeName:   cfg.NodeName,
+			Success:    result.Success,
+			Output:     result.Output,
+			DurationMs: result.DurationMs,
+		}); err != nil {
+			slog.Error("failed to report command result", "command_id", cmd.CommandId, "error", err)
+		}
+
+		level := slog.LevelInfo
+		if !result.Success {
+			level = slog.LevelError
+		}
+		slog.Log(ctx, level, "command completed", "command_id", cmd.CommandId, "success", result.Success, "duration_ms", result.DurationMs)
+	}
+}
+
+// buildComposeDirLookup polls local Docker containers and builds a map
+// from compose project name to the working directory where the compose file lives.
+func buildComposeDirLookup(ctx context.Context, poller *docker.Poller) func(string) string {
+	containers, err := poller.Poll(ctx)
+	if err != nil {
+		slog.Error("failed to poll containers for dir lookup", "error", err)
+		return func(string) string { return "" }
+	}
+
+	dirs := make(map[string]string)
+	for _, c := range containers {
+		project := c.Labels["com.docker.compose.project"]
+		dir := c.Labels["com.docker.compose.project.working_dir"]
+		if project != "" && dir != "" {
+			dirs[project] = dir
+		}
+	}
+
+	return func(project string) string {
+		return dirs[project]
+	}
 }

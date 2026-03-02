@@ -27,6 +27,7 @@ checks:
     - common:dockerfile
     - security:obfuscation
     - security:network
+    - security:shell_injection
     - devops:helm
     - devops:pulumi
     - devops:terraform

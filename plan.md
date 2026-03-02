@@ -82,191 +82,70 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 
 ---
 
-## Phase 3: Remote Actions — `docker compose pull` & `up -d` (P1)
+## Phase 3: Remote Actions — `docker compose pull` & `up -d` (P1) ✅
 
-This is the main feature request. It requires a **command channel** from hub to agent, since today communication is agent→hub only.
+Command channel from hub to agent using polling-based approach.
 
-### 3.1 Protocol: Add Command RPCs to gRPC
+### 3.1 Protocol — [x] Done
+- [x] Added `GetPendingCommands` and `ReportCommandResult` RPCs + messages to `monitor.proto`
+- [x] Generated Go code with `buf generate`
 
-**Goal:** Extend the protobuf definition to support hub→agent command dispatch.
+### 3.2 Database — [x] Done
+- [x] Migration `004_add_commands` with command_id, node_name, action, target, params, status, output, duration_ms, timestamps
 
-**Design decision — polling vs streaming:**
-A polling approach (`GetPendingCommands`) is simpler and more resilient to network issues than server-streaming. The agent already runs a 30s loop — we can piggyback command polling onto that cycle with minimal overhead.
+### 3.3 Hub gRPC — [x] Done
+- [x] `GetPendingCommands`: atomically sets pending→running and returns commands
+- [x] `ReportCommandResult`: updates status, output, duration
 
-- [ ] Add new messages and RPCs to `proto/monitor/v1/monitor.proto`:
+### 3.4 Hub REST — [x] Done
+- [x] `POST /nodes/:node/actions` — creates command (validates action allowlist)
+- [x] `GET /nodes/:node/actions` — lists recent 50 commands
+- [x] `GET /nodes/:node/actions/:id` — single command details
+- [x] All behind Bearer auth middleware
 
-```protobuf
-// Command dispatch — agent polls hub for pending commands
-message GetPendingCommandsRequest {
-  string node_name = 1;
-}
+### 3.5 Agent — [x] Done
+- [x] gRPC client: `GetPendingCommands` + `ReportCommandResult`
+- [x] `executor` package: runs `docker compose pull && docker compose up -d` in compose working dir
+- [x] Compose dir lookup via `com.docker.compose.project.working_dir` label (zero config)
+- [x] `ALLOWED_ACTIONS` env var (default: `compose_update,compose_restart`)
+- [x] Command polling after every poll cycle in main loop
+- [x] Unit tests for executor (disallowed, unknown, missing dir, truncation)
 
-message Command {
-  string command_id  = 1;
-  string action      = 2;   // "compose_update" | "compose_restart" | ...
-  string target      = 3;   // compose project name or container ID
-  map<string, string> params = 4;
-}
-
-message GetPendingCommandsResponse {
-  repeated Command commands = 1;
-}
-
-// Agent reports command execution result
-message ReportCommandResultRequest {
-  string command_id = 1;
-  string node_name  = 2;
-  bool   success    = 3;
-  string output     = 4;   // stdout+stderr, truncated to 10KB
-  int64  duration_ms = 5;
-}
-
-message ReportCommandResultResponse {}
-```
-
-- [ ] Add RPCs to the `MonitoringService`:
-
-```protobuf
-rpc GetPendingCommands(GetPendingCommandsRequest) returns (GetPendingCommandsResponse);
-rpc ReportCommandResult(ReportCommandResultRequest) returns (ReportCommandResultResponse);
-```
-
-- [ ] Run `buf generate` to regenerate Go code
-
-**Files touched:**
-- `proto/monitor/v1/monitor.proto`
-- `proto/monitor/v1/monitor.pb.go` (generated)
-- `proto/monitor/v1/monitor_grpc.pb.go` (generated)
-
-### 3.2 Database: Commands Table
-
-**Goal:** Store pending and completed commands.
-
-- [ ] Create migration `004_add_commands.up.sql`:
-
-```sql
-CREATE TABLE commands (
-    command_id  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-    node_name   TEXT        NOT NULL,
-    action      TEXT        NOT NULL,
-    target      TEXT        NOT NULL DEFAULT '',
-    params      JSONB       NOT NULL DEFAULT '{}',
-    status      TEXT        NOT NULL DEFAULT 'pending',  -- pending | running | success | failed
-    output      TEXT        NOT NULL DEFAULT '',
-    duration_ms BIGINT      NOT NULL DEFAULT 0,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_commands_node_status ON commands (node_name, status);
-```
-
-- [ ] Create the corresponding down migration
-
-**Files touched:**
-- `api/internal/db/migrations/004_add_commands.up.sql` (new)
-- `api/internal/db/migrations/004_add_commands.down.sql` (new)
-
-### 3.3 Hub: Implement Command RPCs
-
-**Goal:** Hub can enqueue commands and serve them to agents.
-
-- [ ] In `api/internal/grpcserver/service.go`, implement `GetPendingCommands`:
-  - Query `commands` where `node_name = $1 AND status = 'pending'`
-  - Set matched commands to `status = 'running'`
-  - Return the list
-- [ ] Implement `ReportCommandResult`:
-  - Update the command row with `success`, `output`, `duration_ms`, `status`
-  - Set `updated_at = NOW()`
-- [ ] Add a timeout sweeper: commands stuck in `running` for > 5 minutes revert to `failed` (can be a goroutine in main or a DB cronjob)
-
-**Files touched:**
-- `api/internal/grpcserver/service.go`
-
-### 3.4 Hub: REST Endpoints for Commands
-
-**Goal:** The UI (or curl) can dispatch commands and track their status.
-
-- [ ] `POST /nodes/:node/actions` — create a new command
-  - Body: `{"action": "compose_update", "target": "mystack"}`
-  - Validates that `action` is in an allowlist
-  - Returns the created command with its ID
-- [ ] `GET /nodes/:node/actions` — list recent commands for a node (last 50)
-- [ ] `GET /nodes/:node/actions/:id` — get a single command's status and output
-- [ ] All action endpoints require authentication (Phase 1 middleware)
-
-**Files touched:**
-- `api/internal/rest/handlers.go`
-
-### 3.5 Agent: Command Polling & Execution
-
-**Goal:** Agent fetches pending commands and executes them.
-
-- [ ] Add `GetPendingCommands` and `ReportCommandResult` to `agent/internal/grpcclient/client.go`
-- [ ] Create `agent/internal/executor/executor.go`:
-  - Receives a `Command` and dispatches based on `action`
-  - For `compose_update`: runs `docker compose -f <path> pull && docker compose -f <path> up -d`
-  - For `compose_restart`: runs `docker compose -f <path> restart`
-  - Captures combined stdout+stderr, truncates to 10KB
-  - Returns success/failure and output
-- [ ] Determine compose file path using one of:
-  - **Option A (label-based):** Read `com.docker.compose.project.working_dir` from any container in the target project — this is where the compose file lives. Agent already has this data from Docker inspect.
-  - **Option B (config-based):** New env var `COMPOSE_DIRS` mapping project names to paths
-  - **Recommendation: Option A** — zero config, works automatically
-- [ ] Add `ALLOWED_ACTIONS` env var to agent config (default: `compose_update,compose_restart`). Agent refuses any action not in the allowlist.
-- [ ] In `agent/cmd/agent/main.go`, add command polling to the main loop:
-  - After each `pollOnce()`, call `GetPendingCommands`
-  - Execute each command sequentially
-  - Report results back to hub
-- [ ] Add unit tests for executor (mock exec)
-
-**Files touched:**
-- `agent/internal/grpcclient/client.go`
-- `agent/internal/executor/executor.go` (new)
-- `agent/internal/config/config.go`
-- `agent/cmd/agent/main.go`
-
-### 3.6 UI: Actions Panel
-
-**Goal:** Users can trigger and monitor remote actions from the web UI.
-
-- [ ] Add an "Update Stack" button to each compose-project group in the node view
-- [ ] Clicking the button calls `POST /nodes/:node/actions` with `action: "compose_update"` and `target: <project>`
-- [ ] Add a slide-out panel or modal showing recent actions for the node (`GET /nodes/:node/actions`)
-- [ ] Each action row shows: status (pending/running/success/failed), target, timestamp, duration
-- [ ] Clicking an action shows its output in a terminal-style log viewer
-- [ ] Poll the action status every 3 seconds while any action is `pending` or `running`
-- [ ] Add a confirmation dialog before triggering an action ("This will pull new images and restart containers on node X. Continue?")
-
-**Files touched:**
-- `ui/src/types.ts`
-- `ui/src/api/client.ts`
-- `ui/src/components/ActionButton.tsx` (new)
-- `ui/src/components/ActionsPanel.tsx` (new)
-- `ui/src/components/ActionOutput.tsx` (new)
-- `ui/src/hooks/useActions.ts` (new)
+### 3.6 UI — [x] Done
+- [x] `ActionResponse` type, `createAction()` + `fetchActions()` API client
+- [x] `UpdateButton` with inline confirmation per compose project group
+- [x] `ActionsPanel` slide-out with status, duration, expandable output
+- [x] Polls every 3s for progress updates
+- [x] Wired into `NodeCard` with "Actions" link in header
 
 ---
 
-## Phase 4: Stale Container Cleanup (P1)
+## Phase 4: Stale Container Cleanup (P1) ✅
 
 ### 4.1 Detect Removed Containers
 
 **Goal:** Clean up containers that no longer exist on any node.
 
-- [ ] In the agent's `pollOnce()`, after `tracker.Prune()`, build a list of container IDs that were previously known but are now gone
-- [ ] Add a new gRPC RPC `ReportRemovedContainers` that accepts a list of container IDs and a node name
-- [ ] Hub marks these containers as removed (soft delete: add `removed_at TIMESTAMPTZ` column) or hard-deletes them
-- [ ] Migration `005_add_removed_at.up.sql`
-- [ ] Update REST queries to exclude containers where `removed_at IS NOT NULL`
-- [ ] Alternatively (simpler): add a scheduled DB cleanup that deletes containers with no heartbeat in the last 48 hours
+- [x] Modified `debounce.Tracker.Prune()` to return removed container IDs
+- [x] Added `ReportRemovedContainers` gRPC RPC to `monitor.proto` and generated Go code
+- [x] Hub gRPC handler sets `removed_at = NOW()` for reported container IDs (soft delete)
+- [x] Migration `005_add_removed_at` adds `removed_at TIMESTAMPTZ` column + partial index for active containers
+- [x] `SyncMetadata` clears `removed_at` when a container reappears (handles container recreation)
+- [x] Updated all REST queries to exclude containers where `removed_at IS NOT NULL`
+- [x] Agent gRPC client sends `ReportRemovedContainers` after each poll cycle
+- [x] Background sweeper on hub marks containers stale after 48h without heartbeat (safety net, runs hourly)
 
 **Files touched:**
 - `proto/monitor/v1/monitor.proto`
 - `api/internal/grpcserver/service.go`
 - `api/internal/rest/handlers.go`
 - `api/internal/db/migrations/005_add_removed_at.up.sql` (new)
-- `agent/cmd/agent/main.go`
+- `api/internal/db/migrations/005_add_removed_at.down.sql` (new)
+- `api/cmd/api/main.go` (sweeper goroutine)
+- `agent/internal/debounce/debounce.go` (Prune returns removed IDs)
+- `agent/internal/debounce/debounce_test.go`
+- `agent/internal/grpcclient/client.go` (ReportRemovedContainers method)
+- `agent/cmd/agent/main.go` (report removed containers after prune)
 
 ---
 

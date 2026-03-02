@@ -9,6 +9,7 @@ import (
 )
 
 const defaultRedactPatterns = "PASSWORD,SECRET,KEY,TOKEN,CREDENTIAL"
+const defaultAllowedActions = "compose_update,compose_restart"
 
 type Config struct {
 	ServerAddr             string
@@ -17,6 +18,7 @@ type Config struct {
 	PollDelay              time.Duration
 	MetadataResyncInterval time.Duration
 	RedactPatterns         []string
+	AllowedActions         map[string]bool
 }
 
 func Load() (*Config, error) {
@@ -37,6 +39,7 @@ func Load() (*Config, error) {
 		PollDelay:              pollDelay,
 		MetadataResyncInterval: resyncInterval,
 		RedactPatterns:         parseRedactPatterns(getEnv("ENV_REDACT_PATTERNS", defaultRedactPatterns)),
+		AllowedActions:         parseAllowedActions(getEnv("ALLOWED_ACTIONS", defaultAllowedActions)),
 	}
 
 	if c.ServerAddr == "" {
@@ -72,6 +75,20 @@ func parseRedactPatterns(raw string) []string {
 		}
 	}
 	return patterns
+}
+
+func parseAllowedActions(raw string) map[string]bool {
+	m := make(map[string]bool)
+	if raw == "" {
+		return m
+	}
+	for _, a := range strings.Split(raw, ",") {
+		a = strings.TrimSpace(a)
+		if a != "" {
+			m[a] = true
+		}
+	}
+	return m
 }
 
 func parseDurationSeconds(envKey, fallback string) (time.Duration, error) {

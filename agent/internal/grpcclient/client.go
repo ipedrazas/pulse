@@ -79,6 +79,35 @@ func (c *Client) SyncMetadata(ctx context.Context, req *monitorv1.SyncMetadataRe
 	return err
 }
 
+// GetPendingCommands polls the hub for commands awaiting execution on this node.
+func (c *Client) GetPendingCommands(ctx context.Context, nodeName string) ([]*monitorv1.Command, error) {
+	ctx = c.withToken(ctx)
+	resp, err := c.service.GetPendingCommands(ctx, &monitorv1.GetPendingCommandsRequest{
+		NodeName: nodeName,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Commands, nil
+}
+
+// ReportCommandResult sends the outcome of a command execution back to the hub.
+func (c *Client) ReportCommandResult(ctx context.Context, req *monitorv1.ReportCommandResultRequest) error {
+	ctx = c.withToken(ctx)
+	_, err := c.service.ReportCommandResult(ctx, req)
+	return err
+}
+
+// ReportRemovedContainers tells the hub that the given containers no longer exist on the node.
+func (c *Client) ReportRemovedContainers(ctx context.Context, nodeName string, containerIDs []string) error {
+	ctx = c.withToken(ctx)
+	_, err := c.service.ReportRemovedContainers(ctx, &monitorv1.ReportRemovedContainersRequest{
+		NodeName:     nodeName,
+		ContainerIds: containerIDs,
+	})
+	return err
+}
+
 func (c *Client) withToken(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "x-monitor-token", c.token)
 }

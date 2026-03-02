@@ -1,4 +1,4 @@
-import type { HealthResponse, NodeContainers } from "../types";
+import type { ActionResponse, HealthResponse, NodeContainers } from "../types";
 
 async function fetchWithRetry(url: string, retries = 3, delayMs = 1000): Promise<Response> {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -26,4 +26,25 @@ export function fetchHealth(): Promise<HealthResponse> {
 
 export function fetchNodes(): Promise<NodeContainers[]> {
   return fetchJSON<NodeContainers[]>("/nodes");
+}
+
+export async function createAction(
+  nodeName: string,
+  action: string,
+  target: string,
+): Promise<ActionResponse> {
+  const res = await fetch(`/nodes/${encodeURIComponent(nodeName)}/actions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, target }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<ActionResponse>;
+}
+
+export function fetchActions(nodeName: string): Promise<ActionResponse[]> {
+  return fetchJSON<ActionResponse[]>(`/nodes/${encodeURIComponent(nodeName)}/actions`);
 }
