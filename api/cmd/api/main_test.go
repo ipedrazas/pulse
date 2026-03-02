@@ -15,7 +15,7 @@ func TestSetupGRPC_NoTLS(t *testing.T) {
 		MonitorToken: "test-token",
 	}
 
-	srv, svc, err := setupGRPC(cfg, nil)
+	srv, svc, err := setupGRPC(cfg, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestSetupGRPC_InvalidTLS(t *testing.T) {
 		TLSKeyFile:   "/nonexistent/key.pem",
 	}
 
-	_, _, err := setupGRPC(cfg, nil)
+	_, _, err := setupGRPC(cfg, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for invalid TLS files")
 	}
@@ -43,7 +43,7 @@ func TestSetupGRPC_InvalidTLS(t *testing.T) {
 
 func TestStartSweeper_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	svc := grpcserver.NewMonitoringService(nil)
+	svc := grpcserver.NewMonitoringService(nil, nil)
 
 	done := make(chan struct{})
 	go func() {

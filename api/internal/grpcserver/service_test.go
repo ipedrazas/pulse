@@ -7,7 +7,7 @@ import (
 )
 
 func TestNewMonitoringService(t *testing.T) {
-	svc := NewMonitoringService(nil)
+	svc := NewMonitoringService(nil, nil)
 	if svc == nil {
 		t.Fatal("expected non-nil service")
 	}
@@ -18,7 +18,7 @@ func TestNewMonitoringService(t *testing.T) {
 
 func TestNewMonitoringService_WithPool(t *testing.T) {
 	pool := &pgxpool.Pool{}
-	svc := NewMonitoringService(pool)
+	svc := NewMonitoringService(pool, nil)
 	if svc.pool != pool {
 		t.Fatal("expected pool to be stored")
 	}

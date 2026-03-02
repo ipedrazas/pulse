@@ -3,16 +3,19 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
-	DBURL        string
-	GRPCPort     string
-	HTTPPort     string
-	MonitorToken string
-	RESTToken    string
-	TLSCertFile  string
-	TLSKeyFile   string
+	DBURL         string
+	GRPCPort      string
+	HTTPPort      string
+	MonitorToken  string
+	RESTToken     string
+	TLSCertFile   string
+	TLSKeyFile    string
+	WebhookURL    string
+	WebhookEvents []string
 }
 
 func Load() (*Config, error) {
@@ -41,6 +44,15 @@ func Load() (*Config, error) {
 
 	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
 		return nil, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must both be set or both be empty")
+	}
+
+	c.WebhookURL = getEnv("WEBHOOK_URL", "")
+	if evts := getEnv("WEBHOOK_EVENTS", ""); evts != "" {
+		for _, e := range strings.Split(evts, ",") {
+			if t := strings.TrimSpace(e); t != "" {
+				c.WebhookEvents = append(c.WebhookEvents, t)
+			}
+		}
 	}
 
 	return c, nil

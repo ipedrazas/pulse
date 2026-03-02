@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/ipedrazas/pulse/api/internal/alerts"
 	"github.com/ipedrazas/pulse/api/internal/config"
 	"github.com/ipedrazas/pulse/api/internal/db"
 	grpcserver "github.com/ipedrazas/pulse/api/internal/grpcserver"
@@ -43,7 +44,7 @@ func initDatabase(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func setupGRPC(cfg *config.Config, pool *pgxpool.Pool) (*grpc.Server, *grpcserver.MonitoringService, error) {
+func setupGRPC(cfg *config.Config, pool *pgxpool.Pool, notifier *alerts.Notifier) (*grpc.Server, *grpcserver.MonitoringService, error) {
 	opts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(cfg.MonitorToken)),
 	}
@@ -61,7 +62,7 @@ func setupGRPC(cfg *config.Config, pool *pgxpool.Pool) (*grpc.Server, *grpcserve
 	}
 
 	srv := grpc.NewServer(opts...)
-	svc := grpcserver.NewMonitoringService(pool)
+	svc := grpcserver.NewMonitoringService(pool, notifier)
 	monitorv1.RegisterMonitoringServiceServer(srv, svc)
 
 	return srv, svc, nil
@@ -104,7 +105,8 @@ func main() {
 	}
 	defer pool.Close()
 
-	grpcSrv, monSvc, err := setupGRPC(cfg, pool)
+	notifier := alerts.NewNotifier(cfg.WebhookURL, cfg.WebhookEvents)
+	grpcSrv, monSvc, err := setupGRPC(cfg, pool, notifier)
 	if err != nil {
 		slog.Error("gRPC setup failed", "error", err)
 		os.Exit(1)

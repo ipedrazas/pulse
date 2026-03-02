@@ -92,7 +92,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	grpcSrv := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(testToken)),
 	)
-	monitorv1.RegisterMonitoringServiceServer(grpcSrv, grpcserver.NewMonitoringService(pool))
+	monitorv1.RegisterMonitoringServiceServer(grpcSrv, grpcserver.NewMonitoringService(pool, nil))
 	go grpcSrv.Serve(grpcLis)
 	t.Cleanup(func() { grpcSrv.GracefulStop() })
 

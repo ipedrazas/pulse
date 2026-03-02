@@ -6,22 +6,37 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ipedrazas/pulse/api/internal/alerts"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
 
 type MonitoringService struct {
 	monitorv1.UnimplementedMonitoringServiceServer
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	notifier *alerts.Notifier
 }
 
-func NewMonitoringService(pool *pgxpool.Pool) *MonitoringService {
-	return &MonitoringService{pool: pool}
+func NewMonitoringService(pool *pgxpool.Pool, notifier *alerts.Notifier) *MonitoringService {
+	return &MonitoringService{pool: pool, notifier: notifier}
 }
 
 func (s *MonitoringService) ReportHeartbeat(ctx context.Context, req *monitorv1.ReportHeartbeatRequest) (*monitorv1.ReportHeartbeatResponse, error) {
-	_, err := s.pool.Exec(ctx,
+	// Query previous status before inserting the new heartbeat.
+	var prevStatus string
+	err := s.pool.QueryRow(ctx,
+		`SELECT status FROM container_heartbeats
+		 WHERE container_id = $1
+		 ORDER BY time DESC LIMIT 1`,
+		req.ContainerId,
+	).Scan(&prevStatus)
+	if err != nil && err != pgx.ErrNoRows {
+		slog.Error("failed to query previous status", "container_id", req.ContainerId, "error", err)
+	}
+
+	_, err = s.pool.Exec(ctx,
 		`INSERT INTO container_heartbeats (time, container_id, status, uptime_seconds)
 		 VALUES ($1, $2, $3, $4)`,
 		time.Now(), req.ContainerId, req.Status, req.UptimeSeconds,
@@ -32,6 +47,13 @@ func (s *MonitoringService) ReportHeartbeat(ctx context.Context, req *monitorv1.
 	}
 
 	slog.Debug("heartbeat recorded", "container_id", req.ContainerId, "status", req.Status)
+
+	// Detect state transitions and fire webhook.
+	if s.notifier != nil && prevStatus != "" && prevStatus != req.Status {
+		event := s.buildTransitionEvent(ctx, req.ContainerId, prevStatus, req.Status)
+		s.notifier.Send(event)
+	}
+
 	return &monitorv1.ReportHeartbeatResponse{}, nil
 }
 
@@ -139,6 +161,39 @@ func (s *MonitoringService) ReportRemovedContainers(ctx context.Context, req *mo
 		return &monitorv1.ReportRemovedContainersResponse{RemovedCount: 0}, nil
 	}
 
+	// Query container metadata before marking removed, for webhook notifications.
+	type containerInfo struct {
+		containerID    string
+		name           string
+		image          string
+		composeProject string
+	}
+	var removedContainers []containerInfo
+	if s.notifier != nil {
+		rows, err := s.pool.Query(ctx,
+			`SELECT container_id, name, image_tag, COALESCE(compose_project, '')
+			 FROM containers
+			 WHERE node_name = $1
+			   AND container_id = ANY($2)
+			   AND removed_at IS NULL`,
+			req.NodeName, req.ContainerIds,
+		)
+		if err != nil {
+			slog.Error("failed to query containers for webhook", "error", err)
+		} else {
+			defer rows.Close()
+			for rows.Next() {
+				var ci containerInfo
+				if err := rows.Scan(&ci.containerID, &ci.name, &ci.image, &ci.composeProject); err != nil {
+					slog.Error("failed to scan container info", "error", err)
+					continue
+				}
+				removedContainers = append(removedContainers, ci)
+			}
+			rows.Close()
+		}
+	}
+
 	tag, err := s.pool.Exec(ctx,
 		`UPDATE containers
 		 SET removed_at = NOW()
@@ -156,7 +211,52 @@ func (s *MonitoringService) ReportRemovedContainers(ctx context.Context, req *mo
 	if count > 0 {
 		slog.Info("containers marked removed", "node", req.NodeName, "count", count)
 	}
+
+	// Fire webhook events for removed containers.
+	for _, ci := range removedContainers {
+		s.notifier.Send(alerts.Event{
+			EventType:      alerts.EventContainerRemoved,
+			ContainerID:    ci.containerID,
+			ContainerName:  ci.name,
+			NodeName:       req.NodeName,
+			Image:          ci.image,
+			ComposeProject: ci.composeProject,
+		})
+	}
+
 	return &monitorv1.ReportRemovedContainersResponse{RemovedCount: count}, nil
+}
+
+func (s *MonitoringService) buildTransitionEvent(ctx context.Context, containerID, prevStatus, newStatus string) alerts.Event {
+	eventType := alerts.EventContainerStarted
+	if newStatus == "exited" {
+		eventType = alerts.EventContainerDied
+	}
+
+	event := alerts.Event{
+		EventType:      eventType,
+		ContainerID:    containerID,
+		PreviousStatus: prevStatus,
+		CurrentStatus:  newStatus,
+	}
+
+	// Enrich with container metadata.
+	var name, nodeName, image, composeProject string
+	err := s.pool.QueryRow(ctx,
+		`SELECT name, node_name, image_tag, COALESCE(compose_project, '')
+		 FROM containers WHERE container_id = $1`,
+		containerID,
+	).Scan(&name, &nodeName, &image, &composeProject)
+	if err != nil {
+		slog.Warn("webhook: could not enrich event with metadata", "container_id", containerID, "error", err)
+	} else {
+		event.ContainerName = name
+		event.NodeName = nodeName
+		event.Image = image
+		event.ComposeProject = composeProject
+	}
+
+	return event
 }
 
 // SweepStaleContainers marks containers as removed if they haven't had a

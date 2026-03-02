@@ -68,7 +68,7 @@ func TestGRPCReconnectAfterServerRestart(t *testing.T) {
 	newSrv := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(testToken)),
 	)
-	monitorv1.RegisterMonitoringServiceServer(newSrv, grpcserver.NewMonitoringService(env.pool))
+	monitorv1.RegisterMonitoringServiceServer(newSrv, grpcserver.NewMonitoringService(env.pool, nil))
 	go newSrv.Serve(lis)
 	t.Cleanup(func() { newSrv.GracefulStop() })
 
