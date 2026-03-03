@@ -30,12 +30,7 @@ openssl genrsa -out ca.key 4096
 openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 \
   -out ca.crt -subj "/CN=Pulse CA"
 
-# 2. Create a server key and CSR
-openssl genrsa -out server.key 2048
-openssl req -new -key server.key -out server.csr \
-  -subj "/CN=pulse-api"
-
-# 3. Create a SAN config (important — Go requires SANs)
+# 2. Create a SAN config (important — Go requires SANs)
 cat > san.cnf <<EOF
 [req]
 distinguished_name = req_distinguished_name
@@ -47,7 +42,14 @@ DNS.1 = api
 DNS.2 = pulse-api
 DNS.3 = localhost
 IP.1  = 127.0.0.1
+IP.2  = 192.168.2.148
 EOF
+
+# 3. Create a server key and CSR (pointing to the config)
+openssl genrsa -out server.key 2048
+openssl req -new -key server.key -out server.csr \
+  -subj "/CN=pulse-api" \
+  -config san.cnf
 
 # 4. Sign the server certificate with the CA (valid 1 year)
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key \
