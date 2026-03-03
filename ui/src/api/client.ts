@@ -32,11 +32,12 @@ export async function createAction(
   nodeName: string,
   action: string,
   target: string,
+  params?: Record<string, string>,
 ): Promise<ActionResponse> {
   const res = await fetch(`/nodes/${encodeURIComponent(nodeName)}/actions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, target }),
+    body: JSON.stringify({ action, target, params }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -47,4 +48,10 @@ export async function createAction(
 
 export function fetchActions(nodeName: string): Promise<ActionResponse[]> {
   return fetchJSON<ActionResponse[]>(`/nodes/${encodeURIComponent(nodeName)}/actions`);
+}
+
+export function fetchAction(nodeName: string, commandId: string): Promise<ActionResponse> {
+  return fetchJSON<ActionResponse>(
+    `/nodes/${encodeURIComponent(nodeName)}/actions/${encodeURIComponent(commandId)}`,
+  );
 }

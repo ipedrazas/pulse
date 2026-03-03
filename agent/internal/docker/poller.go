@@ -2,6 +2,9 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -9,6 +12,15 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 )
+
+// DockerOps defines container-level operations that the executor can invoke.
+type DockerOps interface {
+	StopContainer(ctx context.Context, containerID string) error
+	StartContainer(ctx context.Context, containerID string) error
+	RestartContainer(ctx context.Context, containerID string) error
+	ContainerLogs(ctx context.Context, containerID string, tail string) (string, error)
+	InspectContainer(ctx context.Context, containerID string) (string, error)
+}
 
 // ContainerInfo holds the extracted data from a running Docker container.
 type ContainerInfo struct {
@@ -46,6 +58,80 @@ func NewPoller() (*Poller, error) {
 // Close releases the Docker client resources.
 func (p *Poller) Close() error {
 	return p.client.Close()
+}
+
+// StopContainer stops a container by ID.
+func (p *Poller) StopContainer(ctx context.Context, containerID string) error {
+	return p.client.ContainerStop(ctx, containerID, container.StopOptions{})
+}
+
+// StartContainer starts a stopped container by ID.
+func (p *Poller) StartContainer(ctx context.Context, containerID string) error {
+	return p.client.ContainerStart(ctx, containerID, container.StartOptions{})
+}
+
+// RestartContainer restarts a container by ID.
+func (p *Poller) RestartContainer(ctx context.Context, containerID string) error {
+	return p.client.ContainerRestart(ctx, containerID, container.StopOptions{})
+}
+
+// ContainerLogs fetches the last `tail` lines of logs from a container.
+func (p *Poller) ContainerLogs(ctx context.Context, containerID string, tail string) (string, error) {
+	if tail == "" {
+		tail = "100"
+	}
+	reader, err := p.client.ContainerLogs(ctx, containerID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       tail,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+
+	// Docker log stream uses a multiplexed format with 8-byte headers.
+	// Read raw bytes and strip the headers for clean output.
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		return "", fmt.Errorf("reading logs: %w", err)
+	}
+
+	return stripDockerLogHeaders(raw), nil
+}
+
+// stripDockerLogHeaders removes the 8-byte multiplexed stream headers
+// that Docker prepends to each log line.
+func stripDockerLogHeaders(raw []byte) string {
+	var b strings.Builder
+	for len(raw) >= 8 {
+		// bytes 4-7 are big-endian payload size
+		size := int(raw[4])<<24 | int(raw[5])<<16 | int(raw[6])<<8 | int(raw[7])
+		raw = raw[8:]
+		if size > len(raw) {
+			size = len(raw)
+		}
+		b.Write(raw[:size])
+		raw = raw[size:]
+	}
+	// If there's leftover data without a header, include it as-is (e.g. TTY mode).
+	if len(raw) > 0 {
+		b.Write(raw)
+	}
+	return b.String()
+}
+
+// InspectContainer returns the full Docker inspect JSON for a container.
+func (p *Poller) InspectContainer(ctx context.Context, containerID string) (string, error) {
+	detail, err := p.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return "", err
+	}
+	data, err := json.MarshalIndent(detail, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshaling inspect: %w", err)
+	}
+	return string(data), nil
 }
 
 // Poll returns info for all running containers.

@@ -9,7 +9,7 @@ import (
 )
 
 const defaultRedactPatterns = "PASSWORD,SECRET,KEY,TOKEN,CREDENTIAL"
-const defaultAllowedActions = "compose_update,compose_restart"
+const defaultAllowedActions = "compose_update,compose_restart,container_stop,container_start,container_restart,container_logs,container_inspect"
 
 type Config struct {
 	ServerAddr             string

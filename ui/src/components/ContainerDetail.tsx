@@ -3,6 +3,7 @@ import { getContainerStaleness } from "../utils/containerStaleness";
 import { containerStatusColor, containerStatusTextColor } from "../utils/containerStatusColor";
 import { formatLastSeen } from "../utils/formatLastSeen";
 import { formatUptime } from "../utils/formatUptime";
+import { ContainerActions } from "./ContainerActions";
 
 interface ContainerDetailProps {
   container: ContainerStatus;
@@ -67,6 +68,9 @@ export function ContainerDetail({ container, onClose }: ContainerDetailProps) {
             <span className={`inline-block h-3 w-3 rounded-full ${statusColor} ${animate}`} />
             <span className={`text-sm font-medium ${statusTextColor}`}>{statusText}</span>
           </div>
+
+          {/* Container actions */}
+          <ContainerActions container={container} />
 
           {/* Details */}
           <div>

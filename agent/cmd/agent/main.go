@@ -180,7 +180,7 @@ func executeCommands(ctx context.Context, client *grpcclient.Client, poller *doc
 	for _, cmd := range commands {
 		slog.Info("executing command", "command_id", cmd.CommandId, "action", cmd.Action, "target", cmd.Target)
 
-		result := executor.Run(ctx, cmd, cfg.AllowedActions, dirLookup)
+		result := executor.Run(ctx, cmd, cfg.AllowedActions, dirLookup, poller)
 
 		if err := client.ReportCommandResult(ctx, &monitorv1.ReportCommandResultRequest{
 			CommandId:  cmd.CommandId,

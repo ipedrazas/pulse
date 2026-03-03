@@ -260,8 +260,13 @@ func (h *Handler) GetNodeStacks(c *gin.Context) {
 // --- Actions (command dispatch) ---
 
 var allowedActions = map[string]bool{
-	"compose_update":  true,
-	"compose_restart": true,
+	"compose_update":    true,
+	"compose_restart":   true,
+	"container_stop":    true,
+	"container_start":   true,
+	"container_restart": true,
+	"container_logs":    true,
+	"container_inspect": true,
 }
 
 type createActionRequest struct {
