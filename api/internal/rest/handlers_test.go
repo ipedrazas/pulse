@@ -29,16 +29,16 @@ type mockContainerRepo struct {
 	err        error
 }
 
-func (m *mockContainerRepo) ListContainers(_ context.Context) ([]repository.ContainerStatus, error) {
+func (m *mockContainerRepo) ListContainers(_ context.Context, _, _ int) ([]repository.ContainerStatus, error) {
 	return m.containers, m.err
 }
 func (m *mockContainerRepo) GetContainer(_ context.Context, _ string) (repository.ContainerStatus, error) {
 	return m.container, m.err
 }
-func (m *mockContainerRepo) ListContainersByNode(_ context.Context, _ string) ([]repository.ContainerStatus, error) {
+func (m *mockContainerRepo) ListContainersByNode(_ context.Context, _ string, _, _ int) ([]repository.ContainerStatus, error) {
 	return m.containers, m.err
 }
-func (m *mockContainerRepo) ListContainersByNodeForStacks(_ context.Context, _ string) ([]repository.ContainerStatus, error) {
+func (m *mockContainerRepo) ListContainersByNodeForStacks(_ context.Context, _ string, _, _ int) ([]repository.ContainerStatus, error) {
 	return m.containers, m.err
 }
 func (m *mockContainerRepo) GetComposeDir(_ context.Context, _, _ string) (string, error) {
@@ -75,7 +75,7 @@ type mockActionRepo struct {
 func (m *mockActionRepo) CreateAction(_ context.Context, _, _, _ string, _ []byte) (repository.ActionResponse, error) {
 	return m.action, m.err
 }
-func (m *mockActionRepo) ListActions(_ context.Context, _ string) ([]repository.ActionResponse, error) {
+func (m *mockActionRepo) ListActions(_ context.Context, _ string, _, _ int) ([]repository.ActionResponse, error) {
 	return m.actions, m.err
 }
 func (m *mockActionRepo) GetAction(_ context.Context, _, _ string) (repository.ActionResponse, error) {

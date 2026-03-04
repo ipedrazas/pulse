@@ -19,7 +19,4 @@ func TestNewMonitoringService_WithNotifier(t *testing.T) {
 	if svc.notifier != notifier {
 		t.Fatal("expected notifier to be stored")
 	}
-	if svc.onlineAgents == nil {
-		t.Fatal("expected onlineAgents map to be initialized")
-	}
 }

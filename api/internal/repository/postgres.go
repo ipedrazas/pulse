@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -63,8 +65,12 @@ func scanContainerStatus(s scannable) (ContainerStatus, error) {
 	if err != nil {
 		return cs, err
 	}
-	_ = json.Unmarshal(labelsJSON, &cs.Labels)
-	_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
+	if err := json.Unmarshal(labelsJSON, &cs.Labels); err != nil && len(labelsJSON) > 0 {
+		slog.Warn("failed to unmarshal container labels", "container_id", cs.ContainerID, "error", err)
+	}
+	if err := json.Unmarshal(envVarsJSON, &cs.EnvVars); err != nil && len(envVarsJSON) > 0 {
+		slog.Warn("failed to unmarshal container env_vars", "container_id", cs.ContainerID, "error", err)
+	}
 	return cs, nil
 }
 
@@ -83,10 +89,26 @@ func scanActionResponse(s scannable) (ActionResponse, error) {
 	return ar, nil
 }
 
+// paginationClause returns a SQL LIMIT/OFFSET suffix.
+// A limit of 0 means no limit.
+func paginationClause(limit, offset int) string {
+	if limit <= 0 && offset <= 0 {
+		return ""
+	}
+	if limit <= 0 {
+		return fmt.Sprintf(" OFFSET %d", offset)
+	}
+	if offset <= 0 {
+		return fmt.Sprintf(" LIMIT %d", limit)
+	}
+	return fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+}
+
 // --- ContainerRepository ---
 
-func (r *PostgresRepo) ListContainers(ctx context.Context) ([]ContainerStatus, error) {
-	rows, err := r.pool.Query(ctx, statusQuery)
+func (r *PostgresRepo) ListContainers(ctx context.Context, limit, offset int) ([]ContainerStatus, error) {
+	q := statusQuery + " ORDER BY c.node_name, c.name" + paginationClause(limit, offset)
+	rows, err := r.pool.Query(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -118,8 +140,9 @@ func (r *PostgresRepo) GetContainer(ctx context.Context, containerID string) (Co
 	return cs, nil
 }
 
-func (r *PostgresRepo) ListContainersByNode(ctx context.Context, nodeName string) ([]ContainerStatus, error) {
-	rows, err := r.pool.Query(ctx, statusQuery+" AND c.node_name = $1 ORDER BY c.name", nodeName)
+func (r *PostgresRepo) ListContainersByNode(ctx context.Context, nodeName string, limit, offset int) ([]ContainerStatus, error) {
+	q := statusQuery + " AND c.node_name = $1 ORDER BY c.name" + paginationClause(limit, offset)
+	rows, err := r.pool.Query(ctx, q, nodeName)
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +162,9 @@ func (r *PostgresRepo) ListContainersByNode(ctx context.Context, nodeName string
 	return results, nil
 }
 
-func (r *PostgresRepo) ListContainersByNodeForStacks(ctx context.Context, nodeName string) ([]ContainerStatus, error) {
-	rows, err := r.pool.Query(ctx, statusQuery+" AND c.node_name = $1 ORDER BY c.compose_project, c.name", nodeName)
+func (r *PostgresRepo) ListContainersByNodeForStacks(ctx context.Context, nodeName string, limit, offset int) ([]ContainerStatus, error) {
+	q := statusQuery + " AND c.node_name = $1 ORDER BY c.compose_project, c.name" + paginationClause(limit, offset)
+	rows, err := r.pool.Query(ctx, q, nodeName)
 	if err != nil {
 		return nil, err
 	}
@@ -320,16 +344,16 @@ func (r *PostgresRepo) CreateAction(ctx context.Context, nodeName, action, targe
 	return ar, nil
 }
 
-func (r *PostgresRepo) ListActions(ctx context.Context, nodeName string) ([]ActionResponse, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT command_id, node_name, action, target, params, status, output, duration_ms,
+func (r *PostgresRepo) ListActions(ctx context.Context, nodeName string, limit, offset int) ([]ActionResponse, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	q := `SELECT command_id, node_name, action, target, params, status, output, duration_ms,
 		        created_at::text, updated_at::text
 		 FROM commands
 		 WHERE node_name = $1
-		 ORDER BY created_at DESC
-		 LIMIT 50`,
-		nodeName,
-	)
+		 ORDER BY created_at DESC` + paginationClause(limit, offset)
+	rows, err := r.pool.Query(ctx, q, nodeName)
 	if err != nil {
 		return nil, err
 	}

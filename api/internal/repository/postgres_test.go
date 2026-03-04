@@ -64,7 +64,7 @@ func TestPing(t *testing.T) {
 
 func TestListContainers_Empty(t *testing.T) {
 	repo := setupTestRepo(t)
-	containers, err := repo.ListContainers(context.Background())
+	containers, err := repo.ListContainers(context.Background(), 0, 0)
 	if err != nil {
 		t.Fatalf("ListContainers failed: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestUpsertAndGetContainer(t *testing.T) {
 	}
 
 	// List should include it
-	containers, err := repo.ListContainers(ctx)
+	containers, err := repo.ListContainers(ctx, 0, 0)
 	if err != nil {
 		t.Fatalf("ListContainers failed: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestMarkRemovedAndSweep(t *testing.T) {
 	}
 
 	// Should no longer appear in ListContainers
-	containers, err := repo.ListContainers(ctx)
+	containers, err := repo.ListContainers(ctx, 0, 0)
 	if err != nil {
 		t.Fatalf("ListContainers failed: %v", err)
 	}

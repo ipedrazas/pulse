@@ -5,10 +5,28 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 )
+
+// apiError returns a JSON error response with a machine-readable code.
+func apiError(c *gin.Context, status int, code, message string) {
+	c.JSON(status, gin.H{"error": message, "code": code})
+}
+
+// parsePagination reads ?limit= and ?offset= query parameters.
+// Returns 0 for unset/invalid values (meaning "no limit" / "no offset").
+func parsePagination(c *gin.Context) (limit, offset int) {
+	if v := c.Query("limit"); v != "" {
+		limit, _ = strconv.Atoi(v)
+	}
+	if v := c.Query("offset"); v != "" {
+		offset, _ = strconv.Atoi(v)
+	}
+	return
+}
 
 type Handler struct {
 	containers repository.ContainerRepository
@@ -53,10 +71,11 @@ func (h *Handler) Healthz(c *gin.Context) {
 }
 
 func (h *Handler) GetStatus(c *gin.Context) {
-	results, err := h.containers.ListContainers(c.Request.Context())
+	limit, offset := parsePagination(c)
+	results, err := h.containers.ListContainers(c.Request.Context(), limit, offset)
 	if err != nil {
 		slog.Error("failed to list containers", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 	if results == nil {
@@ -71,11 +90,11 @@ func (h *Handler) GetContainerStatus(c *gin.Context) {
 	cs, err := h.containers.GetContainer(c.Request.Context(), containerID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+			apiError(c, http.StatusNotFound, "NOT_FOUND", "container not found")
 			return
 		}
 		slog.Error("failed to get container", "container_id", containerID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 
@@ -88,10 +107,11 @@ type nodeContainers struct {
 }
 
 func (h *Handler) GetNodes(c *gin.Context) {
-	results, err := h.containers.ListContainers(c.Request.Context())
+	limit, offset := parsePagination(c)
+	results, err := h.containers.ListContainers(c.Request.Context(), limit, offset)
 	if err != nil {
 		slog.Error("failed to list containers", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 
@@ -114,16 +134,17 @@ func (h *Handler) GetNodes(c *gin.Context) {
 
 func (h *Handler) GetNode(c *gin.Context) {
 	node := c.Param("node")
+	limit, offset := parsePagination(c)
 
-	containers, err := h.containers.ListContainersByNode(c.Request.Context(), node)
+	containers, err := h.containers.ListContainersByNode(c.Request.Context(), node, limit, offset)
 	if err != nil {
 		slog.Error("failed to list containers by node", "node", node, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 
 	if len(containers) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		apiError(c, http.StatusNotFound, "NOT_FOUND", "node not found")
 		return
 	}
 
@@ -137,11 +158,12 @@ type composeStack struct {
 
 func (h *Handler) GetNodeStacks(c *gin.Context) {
 	node := c.Param("node")
+	limit, offset := parsePagination(c)
 
-	containers, err := h.containers.ListContainersByNodeForStacks(c.Request.Context(), node)
+	containers, err := h.containers.ListContainersByNodeForStacks(c.Request.Context(), node, limit, offset)
 	if err != nil {
 		slog.Error("failed to list containers for stacks", "node", node, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 
@@ -159,7 +181,7 @@ func (h *Handler) GetNodeStacks(c *gin.Context) {
 	}
 
 	if len(grouped) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		apiError(c, http.StatusNotFound, "NOT_FOUND", "node not found")
 		return
 	}
 
@@ -194,12 +216,12 @@ func (h *Handler) CreateAction(c *gin.Context) {
 
 	var req createActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "action is required"})
+		apiError(c, http.StatusBadRequest, "BAD_REQUEST", "action is required")
 		return
 	}
 
 	if !allowedActions[req.Action] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown action: " + req.Action})
+		apiError(c, http.StatusBadRequest, "BAD_REQUEST", "unknown action: "+req.Action)
 		return
 	}
 
@@ -220,7 +242,7 @@ func (h *Handler) CreateAction(c *gin.Context) {
 	ar, err := h.actions.CreateAction(c.Request.Context(), node, req.Action, req.Target, paramsJSON)
 	if err != nil {
 		slog.Error("failed to create action", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 
@@ -229,11 +251,12 @@ func (h *Handler) CreateAction(c *gin.Context) {
 
 func (h *Handler) ListActions(c *gin.Context) {
 	node := c.Param("node")
+	limit, offset := parsePagination(c)
 
-	results, err := h.actions.ListActions(c.Request.Context(), node)
+	results, err := h.actions.ListActions(c.Request.Context(), node, limit, offset)
 	if err != nil {
 		slog.Error("failed to list actions", "node", node, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 	if results == nil {
@@ -249,11 +272,11 @@ func (h *Handler) GetAction(c *gin.Context) {
 	ar, err := h.actions.GetAction(c.Request.Context(), id, node)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "action not found"})
+			apiError(c, http.StatusNotFound, "NOT_FOUND", "action not found")
 			return
 		}
 		slog.Error("failed to get action", "command_id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 
@@ -266,7 +289,7 @@ func (h *Handler) GetAgents(c *gin.Context) {
 	results, err := h.agents.ListAgents(c.Request.Context())
 	if err != nil {
 		slog.Error("failed to list agents", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		apiError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
 	if results == nil {

@@ -11,10 +11,10 @@ var ErrNotFound = errors.New("not found")
 
 // ContainerRepository provides access to container data.
 type ContainerRepository interface {
-	ListContainers(ctx context.Context) ([]ContainerStatus, error)
+	ListContainers(ctx context.Context, limit, offset int) ([]ContainerStatus, error)
 	GetContainer(ctx context.Context, containerID string) (ContainerStatus, error)
-	ListContainersByNode(ctx context.Context, nodeName string) ([]ContainerStatus, error)
-	ListContainersByNodeForStacks(ctx context.Context, nodeName string) ([]ContainerStatus, error)
+	ListContainersByNode(ctx context.Context, nodeName string, limit, offset int) ([]ContainerStatus, error)
+	ListContainersByNodeForStacks(ctx context.Context, nodeName string, limit, offset int) ([]ContainerStatus, error)
 	GetComposeDir(ctx context.Context, nodeName, project string) (string, error)
 	UpsertMetadata(ctx context.Context, m ContainerMetadata) error
 	InsertHeartbeat(ctx context.Context, containerID, status string, uptimeSeconds int64) error
@@ -28,7 +28,7 @@ type ContainerRepository interface {
 // ActionRepository provides access to command/action data.
 type ActionRepository interface {
 	CreateAction(ctx context.Context, nodeName, action, target string, paramsJSON []byte) (ActionResponse, error)
-	ListActions(ctx context.Context, nodeName string) ([]ActionResponse, error)
+	ListActions(ctx context.Context, nodeName string, limit, offset int) ([]ActionResponse, error)
 	GetAction(ctx context.Context, commandID, nodeName string) (ActionResponse, error)
 	ClaimPendingCommands(ctx context.Context, nodeName string) ([]PendingCommand, error)
 	UpdateCommandResult(ctx context.Context, commandID, status, output string, durationMs int64) error

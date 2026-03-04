@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"sync"
-	"time"
 
 	"github.com/ipedrazas/pulse/api/internal/alerts"
 	"github.com/ipedrazas/pulse/api/internal/repository"
@@ -19,18 +17,14 @@ type MonitoringService struct {
 	actions    repository.ActionRepository
 	agents     repository.AgentRepository
 	notifier   *alerts.Notifier
-
-	onlineMu     sync.Mutex
-	onlineAgents map[string]bool
 }
 
 func NewMonitoringService(containers repository.ContainerRepository, actions repository.ActionRepository, agents repository.AgentRepository, notifier *alerts.Notifier) *MonitoringService {
 	return &MonitoringService{
-		containers:   containers,
-		actions:      actions,
-		agents:       agents,
-		notifier:     notifier,
-		onlineAgents: make(map[string]bool),
+		containers: containers,
+		actions:    actions,
+		agents:     agents,
+		notifier:   notifier,
 	}
 }
 
@@ -211,54 +205,4 @@ func (s *MonitoringService) AgentHeartbeat(ctx context.Context, req *monitorv1.A
 
 	slog.Debug("agent heartbeat recorded", "node", req.NodeName, "version", req.AgentVersion)
 	return &monitorv1.AgentHeartbeatResponse{}, nil
-}
-
-// CheckAgentStatus queries the agents table and fires agent_online/agent_offline
-// webhook events for nodes that have changed state since the last check.
-func (s *MonitoringService) CheckAgentStatus(ctx context.Context) {
-	nodes, err := s.agents.ListOnlineAgents(ctx)
-	if err != nil {
-		slog.Error("failed to query agent status", "error", err)
-		return
-	}
-
-	currentOnline := make(map[string]bool, len(nodes))
-	for _, n := range nodes {
-		currentOnline[n] = true
-	}
-
-	s.onlineMu.Lock()
-	prev := s.onlineAgents
-	s.onlineAgents = currentOnline
-	s.onlineMu.Unlock()
-
-	if s.notifier == nil {
-		return
-	}
-
-	// Detect newly online agents.
-	for node := range currentOnline {
-		if !prev[node] {
-			s.notifier.Send(alerts.Event{
-				EventType: alerts.EventAgentOnline,
-				NodeName:  node,
-			})
-		}
-	}
-
-	// Detect newly offline agents.
-	for node := range prev {
-		if !currentOnline[node] {
-			s.notifier.Send(alerts.Event{
-				EventType: alerts.EventAgentOffline,
-				NodeName:  node,
-			})
-		}
-	}
-}
-
-// SweepStaleContainers marks containers as removed if they haven't had a
-// heartbeat in the given duration. Returns the number of containers swept.
-func (s *MonitoringService) SweepStaleContainers(ctx context.Context, maxAge time.Duration) (int64, error) {
-	return s.containers.SweepStale(ctx, maxAge)
 }

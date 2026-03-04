@@ -9,6 +9,54 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestSlogMiddleware(t *testing.T) {
+	r := gin.New()
+	r.Use(SlogMiddleware())
+	r.GET("/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/test", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestSlogMiddleware_RecordsDuration(t *testing.T) {
+	r := gin.New()
+	r.Use(SlogMiddleware())
+	r.GET("/slow", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/slow", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestSlogMiddleware_404(t *testing.T) {
+	r := gin.New()
+	r.Use(SlogMiddleware())
+	r.GET("/exists", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/not-found", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
 func setupAuthRouter(token string) *gin.Engine {
 	r := gin.New()
 	r.GET("/public", func(c *gin.Context) {

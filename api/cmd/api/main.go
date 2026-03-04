@@ -21,6 +21,7 @@ import (
 	"github.com/ipedrazas/pulse/api/internal/config"
 	"github.com/ipedrazas/pulse/api/internal/db"
 	grpcserver "github.com/ipedrazas/pulse/api/internal/grpcserver"
+	"github.com/ipedrazas/pulse/api/internal/maintenance"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	"github.com/ipedrazas/pulse/api/internal/rest"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
@@ -45,7 +46,7 @@ func initDatabase(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func setupGRPC(cfg *config.Config, repo *repository.PostgresRepo, notifier *alerts.Notifier) (*grpc.Server, *grpcserver.MonitoringService, error) {
+func setupGRPC(cfg *config.Config, repo *repository.PostgresRepo, notifier *alerts.Notifier) (*grpc.Server, error) {
 	opts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(cfg.MonitorToken)),
 	}
@@ -53,7 +54,7 @@ func setupGRPC(cfg *config.Config, repo *repository.PostgresRepo, notifier *aler
 	if cfg.TLSCertFile != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("load TLS certificate: %w", err)
+			return nil, fmt.Errorf("load TLS certificate: %w", err)
 		}
 		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsCfg)))
@@ -66,16 +67,16 @@ func setupGRPC(cfg *config.Config, repo *repository.PostgresRepo, notifier *aler
 	svc := grpcserver.NewMonitoringService(repo, repo, repo, notifier)
 	monitorv1.RegisterMonitoringServiceServer(srv, svc)
 
-	return srv, svc, nil
+	return srv, nil
 }
 
-func startSweeper(ctx context.Context, svc *grpcserver.MonitoringService) {
+func startSweeper(ctx context.Context, sched *maintenance.Scheduler) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			swept, err := svc.SweepStaleContainers(ctx, 48*time.Hour)
+			swept, err := sched.SweepStaleContainers(ctx, 48*time.Hour)
 			if err != nil {
 				slog.Error("stale container sweep failed", "error", err)
 			} else if swept > 0 {
@@ -87,13 +88,13 @@ func startSweeper(ctx context.Context, svc *grpcserver.MonitoringService) {
 	}
 }
 
-func startAgentChecker(ctx context.Context, svc *grpcserver.MonitoringService) {
+func startAgentChecker(ctx context.Context, sched *maintenance.Scheduler) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			svc.CheckAgentStatus(ctx)
+			sched.CheckAgentStatus(ctx)
 		case <-ctx.Done():
 			return
 		}
@@ -123,14 +124,15 @@ func main() {
 
 	repo := repository.NewPostgresRepo(pool)
 	notifier := alerts.NewNotifier(cfg.WebhookURL, cfg.WebhookEvents)
-	grpcSrv, monSvc, err := setupGRPC(cfg, repo, notifier)
+	grpcSrv, err := setupGRPC(cfg, repo, notifier)
 	if err != nil {
 		slog.Error("gRPC setup failed", "error", err)
 		os.Exit(1)
 	}
 
-	go startSweeper(ctx, monSvc)
-	go startAgentChecker(ctx, monSvc)
+	sched := maintenance.NewScheduler(repo, repo, notifier)
+	go startSweeper(ctx, sched)
+	go startAgentChecker(ctx, sched)
 
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -142,6 +144,7 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(rest.SlogMiddleware())
 
 	handler := rest.NewHandler(repo, cfg.RESTToken)
 	handler.RegisterRoutes(router)
@@ -175,7 +178,7 @@ func main() {
 	cancel()
 	grpcSrv.GracefulStop()
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*1e9)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
