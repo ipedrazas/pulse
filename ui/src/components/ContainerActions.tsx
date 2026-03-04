@@ -77,8 +77,7 @@ export function ContainerActions({ container, onActionComplete }: ContainerActio
     setActionError(null);
 
     try {
-      const params =
-        action === "container_logs" ? { tail: logTail } : undefined;
+      const params = action === "container_logs" ? { tail: logTail } : undefined;
       const created = await createAction(
         container.node_name,
         action,
@@ -94,7 +93,11 @@ export function ContainerActions({ container, onActionComplete }: ContainerActio
 
   function handleActionClick(action: ActionType) {
     // Destructive actions need confirmation
-    if (action === "container_stop" || action === "container_start" || action === "container_restart") {
+    if (
+      action === "container_stop" ||
+      action === "container_start" ||
+      action === "container_restart"
+    ) {
       setConfirming(action);
       setActionResult(null);
       setActionError(null);
@@ -116,9 +119,7 @@ export function ContainerActions({ container, onActionComplete }: ContainerActio
 
   return (
     <div className="space-y-3">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-        Actions
-      </h3>
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</h3>
 
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2">
@@ -167,9 +168,7 @@ export function ContainerActions({ container, onActionComplete }: ContainerActio
       {/* Confirmation step for destructive actions */}
       {confirming && (
         <div className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/10">
-          <span className="text-xs text-gray-300">
-            {actionLabels[confirming]} container?
-          </span>
+          <span className="text-xs text-gray-300">{actionLabels[confirming]} container?</span>
           <button
             type="button"
             onClick={() => setConfirming(null)}

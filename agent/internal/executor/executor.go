@@ -11,7 +11,7 @@ import (
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
 
-const maxOutputBytes = 10 * 1024    // 10 KB
+const maxOutputBytes = 10 * 1024       // 10 KB
 const maxLargeOutputBytes = 128 * 1024 // 128 KB for logs/inspect
 
 // Result holds the outcome of a command execution.
