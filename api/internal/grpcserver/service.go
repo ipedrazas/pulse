@@ -3,49 +3,45 @@ package grpcserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/ipedrazas/pulse/api/internal/alerts"
+	"github.com/ipedrazas/pulse/api/internal/repository"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
 
 type MonitoringService struct {
 	monitorv1.UnimplementedMonitoringServiceServer
-	pool     *pgxpool.Pool
-	notifier *alerts.Notifier
+	containers repository.ContainerRepository
+	actions    repository.ActionRepository
+	agents     repository.AgentRepository
+	notifier   *alerts.Notifier
 
 	onlineMu     sync.Mutex
 	onlineAgents map[string]bool
 }
 
-func NewMonitoringService(pool *pgxpool.Pool, notifier *alerts.Notifier) *MonitoringService {
-	return &MonitoringService{pool: pool, notifier: notifier, onlineAgents: make(map[string]bool)}
+func NewMonitoringService(containers repository.ContainerRepository, actions repository.ActionRepository, agents repository.AgentRepository, notifier *alerts.Notifier) *MonitoringService {
+	return &MonitoringService{
+		containers:   containers,
+		actions:      actions,
+		agents:       agents,
+		notifier:     notifier,
+		onlineAgents: make(map[string]bool),
+	}
 }
 
 func (s *MonitoringService) ReportHeartbeat(ctx context.Context, req *monitorv1.ReportHeartbeatRequest) (*monitorv1.ReportHeartbeatResponse, error) {
 	// Query previous status before inserting the new heartbeat.
-	var prevStatus string
-	err := s.pool.QueryRow(ctx,
-		`SELECT status FROM container_heartbeats
-		 WHERE container_id = $1
-		 ORDER BY time DESC LIMIT 1`,
-		req.ContainerId,
-	).Scan(&prevStatus)
-	if err != nil && err != pgx.ErrNoRows {
+	prevStatus, err := s.containers.GetPreviousStatus(ctx, req.ContainerId)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		slog.Error("failed to query previous status", "container_id", req.ContainerId, "error", err)
 	}
 
-	_, err = s.pool.Exec(ctx,
-		`INSERT INTO container_heartbeats (time, container_id, status, uptime_seconds)
-		 VALUES ($1, $2, $3, $4)`,
-		time.Now(), req.ContainerId, req.Status, req.UptimeSeconds,
-	)
-	if err != nil {
+	if err := s.containers.InsertHeartbeat(ctx, req.ContainerId, req.Status, req.UptimeSeconds); err != nil {
 		slog.Error("failed to insert heartbeat", "container_id", req.ContainerId, "error", err)
 		return nil, err
 	}
@@ -80,24 +76,19 @@ func (s *MonitoringService) SyncMetadata(ctx context.Context, req *monitorv1.Syn
 	composeProject := req.Labels["com.docker.compose.project"]
 	composeDir := req.Labels["com.docker.compose.project.working_dir"]
 
-	_, err = s.pool.Exec(ctx,
-		`INSERT INTO containers (container_id, node_name, name, image_tag, env_vars, mounts, labels, compose_project, compose_dir, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		 ON CONFLICT (container_id) DO UPDATE SET
-		   node_name        = EXCLUDED.node_name,
-		   name             = EXCLUDED.name,
-		   image_tag        = EXCLUDED.image_tag,
-		   env_vars         = EXCLUDED.env_vars,
-		   mounts           = EXCLUDED.mounts,
-		   labels           = EXCLUDED.labels,
-		   compose_project  = EXCLUDED.compose_project,
-		   compose_dir      = EXCLUDED.compose_dir,
-		   updated_at       = EXCLUDED.updated_at,
-		   removed_at       = NULL`,
-		req.ContainerId, req.NodeName, req.Name, req.Image,
-		envsJSON, mountsJSON, labelsJSON, composeProject, composeDir, time.Now(),
-	)
-	if err != nil {
+	m := repository.ContainerMetadata{
+		ContainerID:    req.ContainerId,
+		NodeName:       req.NodeName,
+		Name:           req.Name,
+		ImageTag:       req.Image,
+		EnvsJSON:       envsJSON,
+		MountsJSON:     mountsJSON,
+		LabelsJSON:     labelsJSON,
+		ComposeProject: composeProject,
+		ComposeDir:     composeDir,
+	}
+
+	if err := s.containers.UpsertMetadata(ctx, m); err != nil {
 		slog.Error("failed to upsert metadata", "container_id", req.ContainerId, "error", err)
 		return nil, err
 	}
@@ -107,30 +98,20 @@ func (s *MonitoringService) SyncMetadata(ctx context.Context, req *monitorv1.Syn
 }
 
 func (s *MonitoringService) GetPendingCommands(ctx context.Context, req *monitorv1.GetPendingCommandsRequest) (*monitorv1.GetPendingCommandsResponse, error) {
-	rows, err := s.pool.Query(ctx,
-		`UPDATE commands
-		 SET status = 'running', updated_at = NOW()
-		 WHERE node_name = $1 AND status = 'pending'
-		 RETURNING command_id, action, target, params`,
-		req.NodeName,
-	)
+	pending, err := s.actions.ClaimPendingCommands(ctx, req.NodeName)
 	if err != nil {
 		slog.Error("failed to fetch pending commands", "node", req.NodeName, "error", err)
 		return nil, err
 	}
-	defer rows.Close()
 
-	var commands []*monitorv1.Command
-	for rows.Next() {
-		var cmd monitorv1.Command
-		var paramsJSON []byte
-		if err := rows.Scan(&cmd.CommandId, &cmd.Action, &cmd.Target, &paramsJSON); err != nil {
-			return nil, err
+	commands := make([]*monitorv1.Command, len(pending))
+	for i, cmd := range pending {
+		commands[i] = &monitorv1.Command{
+			CommandId: cmd.CommandID,
+			Action:    cmd.Action,
+			Target:    cmd.Target,
+			Params:    cmd.Params,
 		}
-		params := map[string]string{}
-		_ = json.Unmarshal(paramsJSON, &params)
-		cmd.Params = params
-		commands = append(commands, &cmd)
 	}
 
 	if len(commands) > 0 {
@@ -145,13 +126,7 @@ func (s *MonitoringService) ReportCommandResult(ctx context.Context, req *monito
 		status = "success"
 	}
 
-	_, err := s.pool.Exec(ctx,
-		`UPDATE commands
-		 SET status = $1, output = $2, duration_ms = $3, updated_at = NOW()
-		 WHERE command_id = $4`,
-		status, req.Output, req.DurationMs, req.CommandId,
-	)
-	if err != nil {
+	if err := s.actions.UpdateCommandResult(ctx, req.CommandId, status, req.Output, req.DurationMs); err != nil {
 		slog.Error("failed to update command result", "command_id", req.CommandId, "error", err)
 		return nil, err
 	}
@@ -166,52 +141,22 @@ func (s *MonitoringService) ReportRemovedContainers(ctx context.Context, req *mo
 	}
 
 	// Query container metadata before marking removed, for webhook notifications.
-	type containerInfo struct {
-		containerID    string
-		name           string
-		image          string
-		composeProject string
-	}
-	var removedContainers []containerInfo
+	var removedContainers []repository.ContainerInfo
 	if s.notifier != nil {
-		rows, err := s.pool.Query(ctx,
-			`SELECT container_id, name, image_tag, COALESCE(compose_project, '')
-			 FROM containers
-			 WHERE node_name = $1
-			   AND container_id = ANY($2)
-			   AND removed_at IS NULL`,
-			req.NodeName, req.ContainerIds,
-		)
+		infos, err := s.containers.GetContainerInfoForRemoval(ctx, req.NodeName, req.ContainerIds)
 		if err != nil {
 			slog.Error("failed to query containers for webhook", "error", err)
 		} else {
-			defer rows.Close()
-			for rows.Next() {
-				var ci containerInfo
-				if err := rows.Scan(&ci.containerID, &ci.name, &ci.image, &ci.composeProject); err != nil {
-					slog.Error("failed to scan container info", "error", err)
-					continue
-				}
-				removedContainers = append(removedContainers, ci)
-			}
-			rows.Close()
+			removedContainers = infos
 		}
 	}
 
-	tag, err := s.pool.Exec(ctx,
-		`UPDATE containers
-		 SET removed_at = NOW()
-		 WHERE node_name = $1
-		   AND container_id = ANY($2)
-		   AND removed_at IS NULL`,
-		req.NodeName, req.ContainerIds,
-	)
+	count, err := s.containers.MarkRemoved(ctx, req.NodeName, req.ContainerIds)
 	if err != nil {
 		slog.Error("failed to mark containers removed", "node", req.NodeName, "error", err)
 		return nil, err
 	}
 
-	count := int32(tag.RowsAffected())
 	if count > 0 {
 		slog.Info("containers marked removed", "node", req.NodeName, "count", count)
 	}
@@ -220,15 +165,15 @@ func (s *MonitoringService) ReportRemovedContainers(ctx context.Context, req *mo
 	for _, ci := range removedContainers {
 		s.notifier.Send(alerts.Event{
 			EventType:      alerts.EventContainerRemoved,
-			ContainerID:    ci.containerID,
-			ContainerName:  ci.name,
+			ContainerID:    ci.ContainerID,
+			ContainerName:  ci.Name,
 			NodeName:       req.NodeName,
-			Image:          ci.image,
-			ComposeProject: ci.composeProject,
+			Image:          ci.ImageTag,
+			ComposeProject: ci.ComposeProject,
 		})
 	}
 
-	return &monitorv1.ReportRemovedContainersResponse{RemovedCount: count}, nil
+	return &monitorv1.ReportRemovedContainersResponse{RemovedCount: int32(count)}, nil
 }
 
 func (s *MonitoringService) buildTransitionEvent(ctx context.Context, containerID, prevStatus, newStatus string) alerts.Event {
@@ -245,34 +190,21 @@ func (s *MonitoringService) buildTransitionEvent(ctx context.Context, containerI
 	}
 
 	// Enrich with container metadata.
-	var name, nodeName, image, composeProject string
-	err := s.pool.QueryRow(ctx,
-		`SELECT name, node_name, image_tag, COALESCE(compose_project, '')
-		 FROM containers WHERE container_id = $1`,
-		containerID,
-	).Scan(&name, &nodeName, &image, &composeProject)
+	ci, nodeName, err := s.containers.GetContainerMetadataForEvent(ctx, containerID)
 	if err != nil {
 		slog.Warn("webhook: could not enrich event with metadata", "container_id", containerID, "error", err)
 	} else {
-		event.ContainerName = name
+		event.ContainerName = ci.Name
 		event.NodeName = nodeName
-		event.Image = image
-		event.ComposeProject = composeProject
+		event.Image = ci.ImageTag
+		event.ComposeProject = ci.ComposeProject
 	}
 
 	return event
 }
 
 func (s *MonitoringService) AgentHeartbeat(ctx context.Context, req *monitorv1.AgentHeartbeatRequest) (*monitorv1.AgentHeartbeatResponse, error) {
-	_, err := s.pool.Exec(ctx,
-		`INSERT INTO agents (node_name, agent_version, last_seen)
-		 VALUES ($1, $2, NOW())
-		 ON CONFLICT (node_name) DO UPDATE SET
-		   agent_version = EXCLUDED.agent_version,
-		   last_seen     = NOW()`,
-		req.NodeName, req.AgentVersion,
-	)
-	if err != nil {
+	if err := s.agents.UpsertAgent(ctx, req.NodeName, req.AgentVersion); err != nil {
 		slog.Error("failed to upsert agent heartbeat", "node", req.NodeName, "error", err)
 		return nil, err
 	}
@@ -284,23 +216,15 @@ func (s *MonitoringService) AgentHeartbeat(ctx context.Context, req *monitorv1.A
 // CheckAgentStatus queries the agents table and fires agent_online/agent_offline
 // webhook events for nodes that have changed state since the last check.
 func (s *MonitoringService) CheckAgentStatus(ctx context.Context) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT node_name FROM agents WHERE last_seen > NOW() - INTERVAL '2 minutes'`,
-	)
+	nodes, err := s.agents.ListOnlineAgents(ctx)
 	if err != nil {
 		slog.Error("failed to query agent status", "error", err)
 		return
 	}
-	defer rows.Close()
 
-	currentOnline := make(map[string]bool)
-	for rows.Next() {
-		var nodeName string
-		if err := rows.Scan(&nodeName); err != nil {
-			slog.Error("failed to scan agent node_name", "error", err)
-			continue
-		}
-		currentOnline[nodeName] = true
+	currentOnline := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		currentOnline[n] = true
 	}
 
 	s.onlineMu.Lock()
@@ -336,19 +260,5 @@ func (s *MonitoringService) CheckAgentStatus(ctx context.Context) {
 // SweepStaleContainers marks containers as removed if they haven't had a
 // heartbeat in the given duration. Returns the number of containers swept.
 func (s *MonitoringService) SweepStaleContainers(ctx context.Context, maxAge time.Duration) (int64, error) {
-	tag, err := s.pool.Exec(ctx,
-		`UPDATE containers c
-		 SET removed_at = NOW()
-		 WHERE removed_at IS NULL
-		   AND NOT EXISTS (
-		     SELECT 1 FROM container_heartbeats h
-		     WHERE h.container_id = c.container_id
-		       AND h.time > NOW() - $1::interval
-		   )`,
-		maxAge.String(),
-	)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
+	return s.containers.SweepStale(ctx, maxAge)
 }

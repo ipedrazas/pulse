@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -144,6 +145,41 @@ func TestLoad_MetadataResyncInvalid(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error for invalid METADATA_RESYNC_SECONDS")
+	}
+}
+
+func TestLoad_LogLevelDefault(t *testing.T) {
+	setRequiredEnvs(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LogLevel != slog.LevelInfo {
+		t.Errorf("expected default LogLevel Info, got %v", cfg.LogLevel)
+	}
+}
+
+func TestLoad_LogLevelCustom(t *testing.T) {
+	setRequiredEnvs(t)
+	t.Setenv("LOG_LEVEL", "warn")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LogLevel != slog.LevelWarn {
+		t.Errorf("expected LogLevel Warn, got %v", cfg.LogLevel)
+	}
+}
+
+func TestLoad_LogLevelInvalid(t *testing.T) {
+	setRequiredEnvs(t)
+	t.Setenv("LOG_LEVEL", "not-a-level")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid LOG_LEVEL")
 	}
 }
 

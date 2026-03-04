@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 )
@@ -16,6 +17,7 @@ type Config struct {
 	TLSKeyFile    string
 	WebhookURL    string
 	WebhookEvents []string
+	LogLevel      slog.Level
 }
 
 func Load() (*Config, error) {
@@ -45,6 +47,13 @@ func Load() (*Config, error) {
 	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
 		return nil, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must both be set or both be empty")
 	}
+
+	levelStr := getEnv("LOG_LEVEL", "info")
+	var logLevel slog.Level
+	if err := logLevel.UnmarshalText([]byte(levelStr)); err != nil {
+		return nil, fmt.Errorf("LOG_LEVEL: invalid value %q: %w", levelStr, err)
+	}
+	c.LogLevel = logLevel
 
 	c.WebhookURL = getEnv("WEBHOOK_URL", "")
 	if evts := getEnv("WEBHOOK_EVENTS", ""); evts != "" {

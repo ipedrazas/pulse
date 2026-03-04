@@ -8,16 +8,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/ipedrazas/pulse/api/internal/repository"
 )
-
-func marshalOrEmpty(v any) []byte {
-	b, _ := json.Marshal(v)
-	return b
-}
 
 const testToken = "test-secret"
 
@@ -25,97 +20,108 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// --- mock DB ---
+// --- mock repositories ---
 
-type mockDB struct {
-	pingErr  error
-	queryErr error
-	rows     pgx.Rows
-	row      pgx.Row
+type mockContainerRepo struct {
+	containers []repository.ContainerStatus
+	container  repository.ContainerStatus
+	composeDir string
+	err        error
 }
 
-func (m *mockDB) Ping(_ context.Context) error { return m.pingErr }
-func (m *mockDB) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-	if m.queryErr != nil {
-		return nil, m.queryErr
-	}
-	return m.rows, nil
+func (m *mockContainerRepo) ListContainers(_ context.Context) ([]repository.ContainerStatus, error) {
+	return m.containers, m.err
 }
-func (m *mockDB) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
-	return m.row
+func (m *mockContainerRepo) GetContainer(_ context.Context, _ string) (repository.ContainerStatus, error) {
+	return m.container, m.err
 }
-func (m *mockDB) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, nil
+func (m *mockContainerRepo) ListContainersByNode(_ context.Context, _ string) ([]repository.ContainerStatus, error) {
+	return m.containers, m.err
 }
-
-// --- mock rows ---
-
-type mockRows struct {
-	data    []containerStatus
-	cursor  int
-	scanErr error
-	closed  bool
+func (m *mockContainerRepo) ListContainersByNodeForStacks(_ context.Context, _ string) ([]repository.ContainerStatus, error) {
+	return m.containers, m.err
 }
-
-func (r *mockRows) Next() bool {
-	if r.cursor < len(r.data) {
-		r.cursor++
-		return true
-	}
-	return false
+func (m *mockContainerRepo) GetComposeDir(_ context.Context, _, _ string) (string, error) {
+	return m.composeDir, m.err
 }
-
-func (r *mockRows) Scan(dest ...any) error {
-	if r.scanErr != nil {
-		return r.scanErr
-	}
-	cs := r.data[r.cursor-1]
-	*dest[0].(*string) = cs.ContainerID
-	*dest[1].(*string) = cs.NodeName
-	*dest[2].(*string) = cs.Name
-	*dest[3].(*string) = cs.ImageTag
-	*dest[4].(**string) = cs.Status
-	*dest[5].(**int64) = cs.UptimeSeconds
-	*dest[6].(**string) = cs.LastSeen
-	*dest[7].(*[]byte) = marshalOrEmpty(cs.Labels)
-	*dest[8].(*[]byte) = marshalOrEmpty(cs.EnvVars)
-	*dest[9].(*string) = cs.ComposeProject
-	return nil
+func (m *mockContainerRepo) UpsertMetadata(_ context.Context, _ repository.ContainerMetadata) error {
+	return m.err
+}
+func (m *mockContainerRepo) InsertHeartbeat(_ context.Context, _, _ string, _ int64) error {
+	return m.err
+}
+func (m *mockContainerRepo) GetPreviousStatus(_ context.Context, _ string) (string, error) {
+	return "", m.err
+}
+func (m *mockContainerRepo) GetContainerInfoForRemoval(_ context.Context, _ string, _ []string) ([]repository.ContainerInfo, error) {
+	return nil, m.err
+}
+func (m *mockContainerRepo) GetContainerMetadataForEvent(_ context.Context, _ string) (repository.ContainerInfo, string, error) {
+	return repository.ContainerInfo{}, "", m.err
+}
+func (m *mockContainerRepo) MarkRemoved(_ context.Context, _ string, _ []string) (int64, error) {
+	return 0, m.err
+}
+func (m *mockContainerRepo) SweepStale(_ context.Context, _ time.Duration) (int64, error) {
+	return 0, m.err
 }
 
-func (r *mockRows) Close()                                       { r.closed = true }
-func (r *mockRows) Err() error                                   { return nil }
-func (r *mockRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
-func (r *mockRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
-func (r *mockRows) Values() ([]any, error)                       { return nil, nil }
-func (r *mockRows) RawValues() [][]byte                          { return nil }
-func (r *mockRows) Conn() *pgx.Conn                              { return nil }
+type mockActionRepo struct {
+	actions []repository.ActionResponse
+	action  repository.ActionResponse
+	err     error
+}
 
-// --- mock row ---
+func (m *mockActionRepo) CreateAction(_ context.Context, _, _, _ string, _ []byte) (repository.ActionResponse, error) {
+	return m.action, m.err
+}
+func (m *mockActionRepo) ListActions(_ context.Context, _ string) ([]repository.ActionResponse, error) {
+	return m.actions, m.err
+}
+func (m *mockActionRepo) GetAction(_ context.Context, _, _ string) (repository.ActionResponse, error) {
+	return m.action, m.err
+}
+func (m *mockActionRepo) ClaimPendingCommands(_ context.Context, _ string) ([]repository.PendingCommand, error) {
+	return nil, m.err
+}
+func (m *mockActionRepo) UpdateCommandResult(_ context.Context, _, _, _ string, _ int64) error {
+	return m.err
+}
 
-type mockRow struct {
-	cs  *containerStatus
+type mockAgentRepo struct {
+	agents []repository.AgentStatus
+	err    error
+}
+
+func (m *mockAgentRepo) UpsertAgent(_ context.Context, _, _ string) error { return m.err }
+func (m *mockAgentRepo) ListOnlineAgents(_ context.Context) ([]string, error) {
+	return nil, m.err
+}
+func (m *mockAgentRepo) ListAgents(_ context.Context) ([]repository.AgentStatus, error) {
+	return m.agents, m.err
+}
+
+type mockHealthChecker struct {
 	err error
 }
 
-func (r *mockRow) Scan(dest ...any) error {
-	if r.err != nil {
-		return r.err
-	}
-	*dest[0].(*string) = r.cs.ContainerID
-	*dest[1].(*string) = r.cs.NodeName
-	*dest[2].(*string) = r.cs.Name
-	*dest[3].(*string) = r.cs.ImageTag
-	*dest[4].(**string) = r.cs.Status
-	*dest[5].(**int64) = r.cs.UptimeSeconds
-	*dest[6].(**string) = r.cs.LastSeen
-	*dest[7].(*[]byte) = marshalOrEmpty(r.cs.Labels)
-	*dest[8].(*[]byte) = marshalOrEmpty(r.cs.EnvVars)
-	*dest[9].(*string) = r.cs.ComposeProject
-	return nil
-}
+func (m *mockHealthChecker) Ping(_ context.Context) error { return m.err }
 
 // --- helpers ---
+
+func newTestHandler(opts ...func(*Handler)) *Handler {
+	h := &Handler{
+		containers: &mockContainerRepo{},
+		actions:    &mockActionRepo{},
+		agents:     &mockAgentRepo{},
+		health:     &mockHealthChecker{},
+		token:      testToken,
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
 
 func ptr[T any](v T) *T { return &v }
 
@@ -126,25 +132,18 @@ func doRequest(r *gin.Engine, method, path string) *httptest.ResponseRecorder {
 	return w
 }
 
+func doJSONRequest(r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	return w
+}
+
 // --- tests ---
 
-func TestNewHandler(t *testing.T) {
-	h := NewHandler(nil, testToken)
-	if h == nil {
-		t.Fatal("expected non-nil handler")
-	}
-}
-
-func TestNewHandlerWithDB(t *testing.T) {
-	db := &mockDB{}
-	h := NewHandlerWithDB(db, testToken)
-	if h == nil || h.db != db {
-		t.Fatal("expected handler with mock DB")
-	}
-}
-
 func TestRegisterRoutes(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	h.RegisterRoutes(r)
 
@@ -178,7 +177,7 @@ func TestRegisterRoutes(t *testing.T) {
 }
 
 func TestHealthz_Healthy(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	r.GET("/healthz", h.Healthz)
 
@@ -196,7 +195,9 @@ func TestHealthz_Healthy(t *testing.T) {
 }
 
 func TestHealthz_Unhealthy(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{pingErr: errors.New("db down")}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.health = &mockHealthChecker{err: errors.New("db down")}
+	})
 	r := gin.New()
 	r.GET("/healthz", h.Healthz)
 
@@ -208,13 +209,13 @@ func TestHealthz_Unhealthy(t *testing.T) {
 }
 
 func TestGetStatus_Success(t *testing.T) {
-	status := "running"
-	uptime := int64(3600)
-	rows := &mockRows{data: []containerStatus{
-		{ContainerID: "c1", NodeName: "n1", Name: "nginx", ImageTag: "nginx:latest", Status: &status, UptimeSeconds: &uptime},
-	}}
-
-	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{
+			containers: []repository.ContainerStatus{
+				{ContainerID: "c1", NodeName: "n1", Name: "nginx", ImageTag: "nginx:latest", Status: ptr("running"), UptimeSeconds: ptr(int64(3600))},
+			},
+		}
+	})
 	r := gin.New()
 	r.GET("/status", h.GetStatus)
 
@@ -224,7 +225,7 @@ func TestGetStatus_Success(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result []containerStatus
+	var result []repository.ContainerStatus
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if len(result) != 1 || result[0].ContainerID != "c1" {
 		t.Errorf("unexpected result: %+v", result)
@@ -232,7 +233,9 @@ func TestGetStatus_Success(t *testing.T) {
 }
 
 func TestGetStatus_QueryError(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("query failed")}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{err: errors.New("query failed")}
+	})
 	r := gin.New()
 	r.GET("/status", h.GetStatus)
 
@@ -241,10 +244,16 @@ func TestGetStatus_QueryError(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", w.Code)
 	}
+
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if body["error"] != "internal server error" {
+		t.Errorf("expected generic error message, got %q", body["error"])
+	}
 }
 
 func TestGetStatus_Empty(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	r.GET("/status", h.GetStatus)
 
@@ -254,7 +263,7 @@ func TestGetStatus_Empty(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result []containerStatus
+	var result []repository.ContainerStatus
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d items", len(result))
@@ -262,9 +271,11 @@ func TestGetStatus_Empty(t *testing.T) {
 }
 
 func TestGetContainerStatus_Found(t *testing.T) {
-	cs := containerStatus{ContainerID: "c1", NodeName: "n1", Name: "test", ImageTag: "img:v1", Status: ptr("running"), UptimeSeconds: ptr(int64(100))}
+	cs := repository.ContainerStatus{ContainerID: "c1", NodeName: "n1", Name: "test", ImageTag: "img:v1", Status: ptr("running"), UptimeSeconds: ptr(int64(100))}
 
-	h := NewHandlerWithDB(&mockDB{row: &mockRow{cs: &cs}}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{container: cs}
+	})
 	r := gin.New()
 	r.GET("/status/:container", h.GetContainerStatus)
 
@@ -274,7 +285,7 @@ func TestGetContainerStatus_Found(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result containerStatus
+	var result repository.ContainerStatus
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if result.ContainerID != "c1" {
 		t.Errorf("expected c1, got %s", result.ContainerID)
@@ -282,7 +293,9 @@ func TestGetContainerStatus_Found(t *testing.T) {
 }
 
 func TestGetContainerStatus_NotFound(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{row: &mockRow{err: pgx.ErrNoRows}}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{err: repository.ErrNotFound}
+	})
 	r := gin.New()
 	r.GET("/status/:container", h.GetContainerStatus)
 
@@ -293,14 +306,36 @@ func TestGetContainerStatus_NotFound(t *testing.T) {
 	}
 }
 
-func TestGetNodes_Success(t *testing.T) {
-	rows := &mockRows{data: []containerStatus{
-		{ContainerID: "c1", NodeName: "node-a", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running")},
-		{ContainerID: "c2", NodeName: "node-a", Name: "redis", ImageTag: "redis:7", Status: ptr("running")},
-		{ContainerID: "c3", NodeName: "node-b", Name: "postgres", ImageTag: "pg:16", Status: ptr("running")},
-	}}
+func TestGetContainerStatus_InternalError(t *testing.T) {
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{err: errors.New("db error")}
+	})
+	r := gin.New()
+	r.GET("/status/:container", h.GetContainerStatus)
 
-	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	w := doRequest(r, "GET", "/status/c1")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
+	}
+
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if body["error"] != "internal server error" {
+		t.Errorf("expected generic error message, got %q", body["error"])
+	}
+}
+
+func TestGetNodes_Success(t *testing.T) {
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{
+			containers: []repository.ContainerStatus{
+				{ContainerID: "c1", NodeName: "node-a", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running")},
+				{ContainerID: "c2", NodeName: "node-a", Name: "redis", ImageTag: "redis:7", Status: ptr("running")},
+				{ContainerID: "c3", NodeName: "node-b", Name: "postgres", ImageTag: "pg:16", Status: ptr("running")},
+			},
+		}
+	})
 	r := gin.New()
 	r.GET("/nodes", h.GetNodes)
 
@@ -324,7 +359,9 @@ func TestGetNodes_Success(t *testing.T) {
 }
 
 func TestGetNodes_QueryError(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("db error")}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{err: errors.New("db error")}
+	})
 	r := gin.New()
 	r.GET("/nodes", h.GetNodes)
 
@@ -336,11 +373,13 @@ func TestGetNodes_QueryError(t *testing.T) {
 }
 
 func TestGetNode_Found(t *testing.T) {
-	rows := &mockRows{data: []containerStatus{
-		{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running")},
-	}}
-
-	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{
+			containers: []repository.ContainerStatus{
+				{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running")},
+			},
+		}
+	})
 	r := gin.New()
 	r.GET("/nodes/:node", h.GetNode)
 
@@ -358,7 +397,7 @@ func TestGetNode_Found(t *testing.T) {
 }
 
 func TestGetNode_NotFound(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	r.GET("/nodes/:node", h.GetNode)
 
@@ -370,7 +409,9 @@ func TestGetNode_NotFound(t *testing.T) {
 }
 
 func TestGetNode_QueryError(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("db error")}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{err: errors.New("db error")}
+	})
 	r := gin.New()
 	r.GET("/nodes/:node", h.GetNode)
 
@@ -382,7 +423,7 @@ func TestGetNode_QueryError(t *testing.T) {
 }
 
 func TestContainerStatusJSON(t *testing.T) {
-	cs := containerStatus{
+	cs := repository.ContainerStatus{
 		ContainerID:   "abc123",
 		NodeName:      "node1",
 		Name:          "nginx",
@@ -406,7 +447,7 @@ func TestContainerStatusJSON(t *testing.T) {
 }
 
 func TestContainerStatusJSON_NullFields(t *testing.T) {
-	cs := containerStatus{
+	cs := repository.ContainerStatus{
 		ContainerID: "abc123",
 		NodeName:    "node1",
 		Name:        "nginx",
@@ -427,13 +468,15 @@ func TestContainerStatusJSON_NullFields(t *testing.T) {
 }
 
 func TestGetNodeStacks_GroupsByProject(t *testing.T) {
-	rows := &mockRows{data: []containerStatus{
-		{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running"), ComposeProject: "web"},
-		{ContainerID: "c2", NodeName: "pve1", Name: "redis", ImageTag: "redis:7", Status: ptr("running"), ComposeProject: "web"},
-		{ContainerID: "c3", NodeName: "pve1", Name: "postgres", ImageTag: "pg:16", Status: ptr("running"), ComposeProject: "db"},
-	}}
-
-	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{
+			containers: []repository.ContainerStatus{
+				{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running"), ComposeProject: "web"},
+				{ContainerID: "c2", NodeName: "pve1", Name: "redis", ImageTag: "redis:7", Status: ptr("running"), ComposeProject: "web"},
+				{ContainerID: "c3", NodeName: "pve1", Name: "postgres", ImageTag: "pg:16", Status: ptr("running"), ComposeProject: "db"},
+			},
+		}
+	})
 	r := gin.New()
 	r.GET("/nodes/:node/stacks", h.GetNodeStacks)
 
@@ -457,11 +500,13 @@ func TestGetNodeStacks_GroupsByProject(t *testing.T) {
 }
 
 func TestGetNodeStacks_StandaloneContainers(t *testing.T) {
-	rows := &mockRows{data: []containerStatus{
-		{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running"), ComposeProject: ""},
-	}}
-
-	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{
+			containers: []repository.ContainerStatus{
+				{ContainerID: "c1", NodeName: "pve1", Name: "nginx", ImageTag: "nginx:1", Status: ptr("running"), ComposeProject: ""},
+			},
+		}
+	})
 	r := gin.New()
 	r.GET("/nodes/:node/stacks", h.GetNodeStacks)
 
@@ -482,7 +527,7 @@ func TestGetNodeStacks_StandaloneContainers(t *testing.T) {
 }
 
 func TestGetNodeStacks_NotFound(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	r.GET("/nodes/:node/stacks", h.GetNodeStacks)
 
@@ -493,44 +538,10 @@ func TestGetNodeStacks_NotFound(t *testing.T) {
 	}
 }
 
-// --- mock action row ---
-
-type mockActionRow struct {
-	ar  actionResponse
-	err error
-}
-
-func (r *mockActionRow) Scan(dest ...any) error {
-	if r.err != nil {
-		return r.err
-	}
-	*dest[0].(*string) = r.ar.CommandID
-	*dest[1].(*string) = r.ar.NodeName
-	*dest[2].(*string) = r.ar.Action
-	*dest[3].(*string) = r.ar.Target
-	*dest[4].(*[]byte) = marshalOrEmpty(r.ar.Params)
-	*dest[5].(*string) = r.ar.Status
-	*dest[6].(*string) = r.ar.Output
-	*dest[7].(*int64) = r.ar.DurationMs
-	*dest[8].(*string) = r.ar.CreatedAt
-	*dest[9].(*string) = r.ar.UpdatedAt
-	return nil
-}
-
-// --- helpers ---
-
-func doJSONRequest(r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	return w
-}
-
 // --- action tests ---
 
 func TestCreateAction_BadJSON(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	r.POST("/nodes/:node/actions", h.CreateAction)
 
@@ -542,7 +553,7 @@ func TestCreateAction_BadJSON(t *testing.T) {
 }
 
 func TestCreateAction_UnknownAction(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	r.POST("/nodes/:node/actions", h.CreateAction)
 
@@ -560,7 +571,7 @@ func TestCreateAction_UnknownAction(t *testing.T) {
 }
 
 func TestCreateAction_Success(t *testing.T) {
-	ar := actionResponse{
+	ar := repository.ActionResponse{
 		CommandID: "cmd-1",
 		NodeName:  "test-node",
 		Action:    "compose_update",
@@ -570,7 +581,10 @@ func TestCreateAction_Success(t *testing.T) {
 		UpdatedAt: "2025-01-15 10:00:00+00",
 	}
 
-	h := NewHandlerWithDB(&mockDB{row: &mockActionRow{ar: ar}}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{err: repository.ErrNotFound}
+		h.actions = &mockActionRepo{action: ar}
+	})
 	r := gin.New()
 	r.POST("/nodes/:node/actions", h.CreateAction)
 
@@ -580,7 +594,7 @@ func TestCreateAction_Success(t *testing.T) {
 		t.Fatalf("expected 201, got %d", w.Code)
 	}
 
-	var result actionResponse
+	var result repository.ActionResponse
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if result.CommandID != "cmd-1" {
 		t.Errorf("expected cmd-1, got %s", result.CommandID)
@@ -588,7 +602,10 @@ func TestCreateAction_Success(t *testing.T) {
 }
 
 func TestCreateAction_DBError(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{row: &mockRow{err: errors.New("db error")}}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.containers = &mockContainerRepo{err: repository.ErrNotFound}
+		h.actions = &mockActionRepo{err: errors.New("db error")}
+	})
 	r := gin.New()
 	r.POST("/nodes/:node/actions", h.CreateAction)
 
@@ -600,7 +617,9 @@ func TestCreateAction_DBError(t *testing.T) {
 }
 
 func TestListActions_QueryError(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{queryErr: errors.New("db error")}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.actions = &mockActionRepo{err: errors.New("db error")}
+	})
 	r := gin.New()
 	r.GET("/nodes/:node/actions", h.ListActions)
 
@@ -612,7 +631,7 @@ func TestListActions_QueryError(t *testing.T) {
 }
 
 func TestListActions_Empty(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{rows: &mockRows{}}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	r.GET("/nodes/:node/actions", h.ListActions)
 
@@ -622,7 +641,7 @@ func TestListActions_Empty(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result []actionResponse
+	var result []repository.ActionResponse
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d items", len(result))
@@ -630,7 +649,9 @@ func TestListActions_Empty(t *testing.T) {
 }
 
 func TestGetAction_NotFound(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{row: &mockRow{err: pgx.ErrNoRows}}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.actions = &mockActionRepo{err: repository.ErrNotFound}
+	})
 	r := gin.New()
 	r.GET("/nodes/:node/actions/:id", h.GetAction)
 
@@ -642,7 +663,7 @@ func TestGetAction_NotFound(t *testing.T) {
 }
 
 func TestGetAction_Success(t *testing.T) {
-	ar := actionResponse{
+	ar := repository.ActionResponse{
 		CommandID: "cmd-1",
 		NodeName:  "test-node",
 		Action:    "compose_restart",
@@ -653,7 +674,9 @@ func TestGetAction_Success(t *testing.T) {
 		UpdatedAt: "2025-01-15 10:05:00+00",
 	}
 
-	h := NewHandlerWithDB(&mockDB{row: &mockActionRow{ar: ar}}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.actions = &mockActionRepo{action: ar}
+	})
 	r := gin.New()
 	r.GET("/nodes/:node/actions/:id", h.GetAction)
 
@@ -663,60 +686,44 @@ func TestGetAction_Success(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result actionResponse
+	var result repository.ActionResponse
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if result.CommandID != "cmd-1" || result.Status != "success" {
 		t.Errorf("unexpected result: %+v", result)
 	}
 }
 
-// --- mock agent rows ---
+func TestGetAction_InternalError(t *testing.T) {
+	h := newTestHandler(func(h *Handler) {
+		h.actions = &mockActionRepo{err: errors.New("db error")}
+	})
+	r := gin.New()
+	r.GET("/nodes/:node/actions/:id", h.GetAction)
 
-type mockAgentRows struct {
-	data    []agentStatus
-	cursor  int
-	scanErr error
-	closed  bool
-}
+	w := doRequest(r, "GET", "/nodes/test/actions/cmd-1")
 
-func (r *mockAgentRows) Next() bool {
-	if r.cursor < len(r.data) {
-		r.cursor++
-		return true
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
 	}
-	return false
-}
 
-func (r *mockAgentRows) Scan(dest ...any) error {
-	if r.scanErr != nil {
-		return r.scanErr
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if body["error"] != "internal server error" {
+		t.Errorf("expected generic error message, got %q", body["error"])
 	}
-	a := r.data[r.cursor-1]
-	*dest[0].(*string) = a.NodeName
-	*dest[1].(*string) = a.AgentVersion
-	*dest[2].(*string) = a.FirstSeen
-	*dest[3].(*string) = a.LastSeen
-	*dest[4].(*bool) = a.Online
-	return nil
 }
-
-func (r *mockAgentRows) Close()                                       { r.closed = true }
-func (r *mockAgentRows) Err() error                                   { return nil }
-func (r *mockAgentRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
-func (r *mockAgentRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
-func (r *mockAgentRows) Values() ([]any, error)                       { return nil, nil }
-func (r *mockAgentRows) RawValues() [][]byte                          { return nil }
-func (r *mockAgentRows) Conn() *pgx.Conn                              { return nil }
 
 // --- agent tests ---
 
 func TestGetAgents_Success(t *testing.T) {
-	rows := &mockAgentRows{data: []agentStatus{
-		{NodeName: "node-a", AgentVersion: "1.0.0", FirstSeen: "2025-01-15 10:00:00+00", LastSeen: "2025-01-15 12:00:00+00", Online: true},
-		{NodeName: "node-b", AgentVersion: "1.0.1", FirstSeen: "2025-01-14 08:00:00+00", LastSeen: "2025-01-14 09:00:00+00", Online: false},
-	}}
-
-	h := NewHandlerWithDB(&mockDB{rows: rows}, testToken)
+	h := newTestHandler(func(h *Handler) {
+		h.agents = &mockAgentRepo{
+			agents: []repository.AgentStatus{
+				{NodeName: "node-a", AgentVersion: "1.0.0", FirstSeen: "2025-01-15 10:00:00+00", LastSeen: "2025-01-15 12:00:00+00", Online: true},
+				{NodeName: "node-b", AgentVersion: "1.0.1", FirstSeen: "2025-01-14 08:00:00+00", LastSeen: "2025-01-14 09:00:00+00", Online: false},
+			},
+		}
+	})
 	r := gin.New()
 	r.GET("/agents", h.GetAgents)
 
@@ -726,7 +733,7 @@ func TestGetAgents_Success(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result []agentStatus
+	var result []repository.AgentStatus
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 agents, got %d", len(result))
@@ -740,7 +747,7 @@ func TestGetAgents_Success(t *testing.T) {
 }
 
 func TestGetAgents_Empty(t *testing.T) {
-	h := NewHandlerWithDB(&mockDB{rows: &mockAgentRows{}}, testToken)
+	h := newTestHandler()
 	r := gin.New()
 	r.GET("/agents", h.GetAgents)
 
@@ -750,7 +757,7 @@ func TestGetAgents_Empty(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var result []agentStatus
+	var result []repository.AgentStatus
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if len(result) != 0 {
 		t.Errorf("expected empty result, got %d items", len(result))

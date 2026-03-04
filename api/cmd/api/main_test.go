@@ -43,7 +43,7 @@ func TestSetupGRPC_InvalidTLS(t *testing.T) {
 
 func TestStartSweeper_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	svc := grpcserver.NewMonitoringService(nil, nil)
+	svc := grpcserver.NewMonitoringService(nil, nil, nil, nil)
 
 	done := make(chan struct{})
 	go func() {

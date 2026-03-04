@@ -1,36 +1,31 @@
 package rest
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ipedrazas/pulse/api/internal/repository"
 )
 
-// DB abstracts the database operations needed by the REST handlers.
-type DB interface {
-	Ping(ctx context.Context) error
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-}
-
 type Handler struct {
-	db    DB
-	token string
+	containers repository.ContainerRepository
+	actions    repository.ActionRepository
+	agents     repository.AgentRepository
+	health     repository.HealthChecker
+	token      string
 }
 
-func NewHandler(pool *pgxpool.Pool, token string) *Handler {
-	return &Handler{db: pool, token: token}
-}
-
-// NewHandlerWithDB creates a handler with an explicit DB interface (useful for testing).
-func NewHandlerWithDB(db DB, token string) *Handler {
-	return &Handler{db: db, token: token}
+func NewHandler(repo *repository.PostgresRepo, token string) *Handler {
+	return &Handler{
+		containers: repo,
+		actions:    repo,
+		agents:     repo,
+		health:     repo,
+		token:      token,
+	}
 }
 
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
@@ -49,99 +44,38 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	auth.GET("/agents", h.GetAgents)
 }
 
-// scannable is satisfied by both pgx.Rows (current row) and pgx.Row.
-type scannable interface {
-	Scan(dest ...any) error
-}
-
-func scanContainer(s scannable) (containerStatus, error) {
-	var cs containerStatus
-	var labelsJSON, envVarsJSON []byte
-	err := s.Scan(
-		&cs.ContainerID, &cs.NodeName, &cs.Name, &cs.ImageTag,
-		&cs.Status, &cs.UptimeSeconds, &cs.LastSeen,
-		&labelsJSON, &envVarsJSON, &cs.ComposeProject,
-	)
-	if err != nil {
-		return cs, err
-	}
-	_ = json.Unmarshal(labelsJSON, &cs.Labels)
-	_ = json.Unmarshal(envVarsJSON, &cs.EnvVars)
-	return cs, nil
-}
-
 func (h *Handler) Healthz(c *gin.Context) {
-	if err := h.db.Ping(c.Request.Context()); err != nil {
+	if err := h.health.Ping(c.Request.Context()); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy", "error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 }
 
-type containerStatus struct {
-	ContainerID    string            `json:"container_id"`
-	NodeName       string            `json:"node_name"`
-	Name           string            `json:"name"`
-	ImageTag       string            `json:"image_tag"`
-	Status         *string           `json:"status"`
-	UptimeSeconds  *int64            `json:"uptime_seconds"`
-	LastSeen       *string           `json:"last_seen"`
-	Labels         map[string]string `json:"labels"`
-	EnvVars        map[string]string `json:"env_vars"`
-	ComposeProject string            `json:"compose_project"`
-}
-
-const statusQuery = `
-SELECT
-  c.container_id,
-  c.node_name,
-  c.name,
-  c.image_tag,
-  h.status,
-  h.uptime_seconds,
-  h.time::text AS last_seen,
-  c.labels,
-  c.env_vars,
-  c.compose_project
-FROM containers c
-LEFT JOIN LATERAL (
-  SELECT status, uptime_seconds, time
-  FROM container_heartbeats
-  WHERE container_id = c.container_id
-  ORDER BY time DESC
-  LIMIT 1
-) h ON true
-WHERE c.removed_at IS NULL`
-
 func (h *Handler) GetStatus(c *gin.Context) {
-	rows, err := h.db.Query(c.Request.Context(), statusQuery)
+	results, err := h.containers.ListContainers(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to list containers", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	defer rows.Close()
-
-	results := []containerStatus{}
-	for rows.Next() {
-		cs, err := scanContainer(rows)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		results = append(results, cs)
+	if results == nil {
+		results = []repository.ContainerStatus{}
 	}
-
 	c.JSON(http.StatusOK, results)
 }
 
 func (h *Handler) GetContainerStatus(c *gin.Context) {
 	containerID := c.Param("container")
 
-	row := h.db.QueryRow(c.Request.Context(), statusQuery+" AND c.container_id = $1", containerID)
-
-	cs, err := scanContainer(row)
+	cs, err := h.containers.GetContainer(c.Request.Context(), containerID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+			return
+		}
+		slog.Error("failed to get container", "container_id", containerID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
@@ -149,58 +83,43 @@ func (h *Handler) GetContainerStatus(c *gin.Context) {
 }
 
 type nodeContainers struct {
-	NodeName   string            `json:"node_name"`
-	Containers []containerStatus `json:"containers"`
+	NodeName   string                       `json:"node_name"`
+	Containers []repository.ContainerStatus `json:"containers"`
 }
 
 func (h *Handler) GetNodes(c *gin.Context) {
-	rows, err := h.db.Query(c.Request.Context(), statusQuery+" ORDER BY c.node_name, c.name")
+	results, err := h.containers.ListContainers(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to list containers", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	defer rows.Close()
 
-	grouped := map[string][]containerStatus{}
+	grouped := map[string][]repository.ContainerStatus{}
 	var order []string
-	for rows.Next() {
-		cs, err := scanContainer(rows)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	for _, cs := range results {
 		if _, exists := grouped[cs.NodeName]; !exists {
 			order = append(order, cs.NodeName)
 		}
 		grouped[cs.NodeName] = append(grouped[cs.NodeName], cs)
 	}
 
-	results := make([]nodeContainers, 0, len(grouped))
+	nodes := make([]nodeContainers, 0, len(grouped))
 	for _, node := range order {
-		results = append(results, nodeContainers{NodeName: node, Containers: grouped[node]})
+		nodes = append(nodes, nodeContainers{NodeName: node, Containers: grouped[node]})
 	}
 
-	c.JSON(http.StatusOK, results)
+	c.JSON(http.StatusOK, nodes)
 }
 
 func (h *Handler) GetNode(c *gin.Context) {
 	node := c.Param("node")
 
-	rows, err := h.db.Query(c.Request.Context(), statusQuery+" AND c.node_name = $1 ORDER BY c.name", node)
+	containers, err := h.containers.ListContainersByNode(c.Request.Context(), node)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to list containers by node", "node", node, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
-	}
-	defer rows.Close()
-
-	containers := []containerStatus{}
-	for rows.Next() {
-		cs, err := scanContainer(rows)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		containers = append(containers, cs)
 	}
 
 	if len(containers) == 0 {
@@ -212,28 +131,23 @@ func (h *Handler) GetNode(c *gin.Context) {
 }
 
 type composeStack struct {
-	Project    string            `json:"project"`
-	Containers []containerStatus `json:"containers"`
+	Project    string                       `json:"project"`
+	Containers []repository.ContainerStatus `json:"containers"`
 }
 
 func (h *Handler) GetNodeStacks(c *gin.Context) {
 	node := c.Param("node")
 
-	rows, err := h.db.Query(c.Request.Context(), statusQuery+" AND c.node_name = $1 ORDER BY c.compose_project, c.name", node)
+	containers, err := h.containers.ListContainersByNodeForStacks(c.Request.Context(), node)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to list containers for stacks", "node", node, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	defer rows.Close()
 
-	grouped := map[string][]containerStatus{}
+	grouped := map[string][]repository.ContainerStatus{}
 	var order []string
-	for rows.Next() {
-		cs, err := scanContainer(rows)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	for _, cs := range containers {
 		project := cs.ComposeProject
 		if project == "" {
 			project = "(standalone)"
@@ -275,19 +189,6 @@ type createActionRequest struct {
 	Params map[string]string `json:"params"`
 }
 
-type actionResponse struct {
-	CommandID  string            `json:"command_id"`
-	NodeName   string            `json:"node_name"`
-	Action     string            `json:"action"`
-	Target     string            `json:"target"`
-	Params     map[string]string `json:"params"`
-	Status     string            `json:"status"`
-	Output     string            `json:"output"`
-	DurationMs int64             `json:"duration_ms"`
-	CreatedAt  string            `json:"created_at"`
-	UpdatedAt  string            `json:"updated_at"`
-}
-
 func (h *Handler) CreateAction(c *gin.Context) {
 	node := c.Param("node")
 
@@ -302,19 +203,24 @@ func (h *Handler) CreateAction(c *gin.Context) {
 		return
 	}
 
+	// For compose actions, look up the working directory from containers in the project.
+	if req.Action == "compose_update" || req.Action == "compose_restart" {
+		composeDir, err := h.containers.GetComposeDir(c.Request.Context(), node, req.Target)
+		if err == nil && composeDir != "" {
+			if req.Params == nil {
+				req.Params = make(map[string]string)
+			}
+			req.Params["compose_dir"] = composeDir
+		}
+		slog.Info("CreateAction: looked up compose_dir", "node", node, "project", req.Target, "dir", composeDir, "error", err)
+	}
+
 	paramsJSON, _ := json.Marshal(req.Params)
 
-	row := h.db.QueryRow(c.Request.Context(),
-		`INSERT INTO commands (node_name, action, target, params)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING command_id, node_name, action, target, params, status, output, duration_ms,
-		           created_at::text, updated_at::text`,
-		node, req.Action, req.Target, paramsJSON,
-	)
-
-	ar, err := scanAction(row)
+	ar, err := h.actions.CreateAction(c.Request.Context(), node, req.Action, req.Target, paramsJSON)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to create action", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
@@ -324,31 +230,15 @@ func (h *Handler) CreateAction(c *gin.Context) {
 func (h *Handler) ListActions(c *gin.Context) {
 	node := c.Param("node")
 
-	rows, err := h.db.Query(c.Request.Context(),
-		`SELECT command_id, node_name, action, target, params, status, output, duration_ms,
-		        created_at::text, updated_at::text
-		 FROM commands
-		 WHERE node_name = $1
-		 ORDER BY created_at DESC
-		 LIMIT 50`,
-		node,
-	)
+	results, err := h.actions.ListActions(c.Request.Context(), node)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to list actions", "node", node, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	defer rows.Close()
-
-	results := []actionResponse{}
-	for rows.Next() {
-		ar, err := scanAction(rows)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		results = append(results, ar)
+	if results == nil {
+		results = []repository.ActionResponse{}
 	}
-
 	c.JSON(http.StatusOK, results)
 }
 
@@ -356,68 +246,31 @@ func (h *Handler) GetAction(c *gin.Context) {
 	node := c.Param("node")
 	id := c.Param("id")
 
-	row := h.db.QueryRow(c.Request.Context(),
-		`SELECT command_id, node_name, action, target, params, status, output, duration_ms,
-		        created_at::text, updated_at::text
-		 FROM commands
-		 WHERE command_id = $1 AND node_name = $2`,
-		id, node,
-	)
-
-	ar, err := scanAction(row)
+	ar, err := h.actions.GetAction(c.Request.Context(), id, node)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "action not found"})
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "action not found"})
+			return
+		}
+		slog.Error("failed to get action", "command_id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
 	c.JSON(http.StatusOK, ar)
 }
 
-func scanAction(s scannable) (actionResponse, error) {
-	var ar actionResponse
-	var paramsJSON []byte
-	err := s.Scan(
-		&ar.CommandID, &ar.NodeName, &ar.Action, &ar.Target,
-		&paramsJSON, &ar.Status, &ar.Output, &ar.DurationMs,
-		&ar.CreatedAt, &ar.UpdatedAt,
-	)
-	if err != nil {
-		return ar, err
-	}
-	_ = json.Unmarshal(paramsJSON, &ar.Params)
-	return ar, nil
-}
-
 // --- Agents ---
 
-type agentStatus struct {
-	NodeName     string `json:"node_name"`
-	AgentVersion string `json:"agent_version"`
-	FirstSeen    string `json:"first_seen"`
-	LastSeen     string `json:"last_seen"`
-	Online       bool   `json:"online"`
-}
-
 func (h *Handler) GetAgents(c *gin.Context) {
-	rows, err := h.db.Query(c.Request.Context(),
-		`SELECT node_name, agent_version, first_seen::text, last_seen::text,
-		        (last_seen > NOW() - INTERVAL '2 minutes') AS online
-		 FROM agents ORDER BY node_name`)
+	results, err := h.agents.ListAgents(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to list agents", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	defer rows.Close()
-
-	results := []agentStatus{}
-	for rows.Next() {
-		var a agentStatus
-		if err := rows.Scan(&a.NodeName, &a.AgentVersion, &a.FirstSeen, &a.LastSeen, &a.Online); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		results = append(results, a)
+	if results == nil {
+		results = []repository.AgentStatus{}
 	}
-
 	c.JSON(http.StatusOK, results)
 }

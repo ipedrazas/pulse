@@ -21,6 +21,7 @@ import (
 	"github.com/ipedrazas/pulse/api/internal/config"
 	"github.com/ipedrazas/pulse/api/internal/db"
 	grpcserver "github.com/ipedrazas/pulse/api/internal/grpcserver"
+	"github.com/ipedrazas/pulse/api/internal/repository"
 	"github.com/ipedrazas/pulse/api/internal/rest"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
@@ -44,7 +45,7 @@ func initDatabase(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func setupGRPC(cfg *config.Config, pool *pgxpool.Pool, notifier *alerts.Notifier) (*grpc.Server, *grpcserver.MonitoringService, error) {
+func setupGRPC(cfg *config.Config, repo *repository.PostgresRepo, notifier *alerts.Notifier) (*grpc.Server, *grpcserver.MonitoringService, error) {
 	opts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(cfg.MonitorToken)),
 	}
@@ -62,7 +63,7 @@ func setupGRPC(cfg *config.Config, pool *pgxpool.Pool, notifier *alerts.Notifier
 	}
 
 	srv := grpc.NewServer(opts...)
-	svc := grpcserver.NewMonitoringService(pool, notifier)
+	svc := grpcserver.NewMonitoringService(repo, repo, repo, notifier)
 	monitorv1.RegisterMonitoringServiceServer(srv, svc)
 
 	return srv, svc, nil
@@ -100,13 +101,15 @@ func startAgentChecker(ctx context.Context, svc *grpcserver.MonitoringService) {
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -118,8 +121,9 @@ func main() {
 	}
 	defer pool.Close()
 
+	repo := repository.NewPostgresRepo(pool)
 	notifier := alerts.NewNotifier(cfg.WebhookURL, cfg.WebhookEvents)
-	grpcSrv, monSvc, err := setupGRPC(cfg, pool, notifier)
+	grpcSrv, monSvc, err := setupGRPC(cfg, repo, notifier)
 	if err != nil {
 		slog.Error("gRPC setup failed", "error", err)
 		os.Exit(1)
@@ -139,7 +143,7 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	handler := rest.NewHandler(pool, cfg.RESTToken)
+	handler := rest.NewHandler(repo, cfg.RESTToken)
 	handler.RegisterRoutes(router)
 
 	httpSrv := &http.Server{

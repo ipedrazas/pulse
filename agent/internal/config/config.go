@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ type Config struct {
 	RedactPatterns         []string
 	AllowedActions         map[string]bool
 	TLSCAFile              string
+	LogLevel               slog.Level
 }
 
 func Load() (*Config, error) {
@@ -53,6 +55,13 @@ func Load() (*Config, error) {
 	if c.NodeName == "" {
 		return nil, fmt.Errorf("PROXMOX_NODE_NAME is required")
 	}
+
+	levelStr := getEnv("LOG_LEVEL", "info")
+	var logLevel slog.Level
+	if err := logLevel.UnmarshalText([]byte(levelStr)); err != nil {
+		return nil, fmt.Errorf("LOG_LEVEL: invalid value %q: %w", levelStr, err)
+	}
+	c.LogLevel = logLevel
 
 	return c, nil
 }

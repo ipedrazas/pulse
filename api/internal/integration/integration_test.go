@@ -22,6 +22,7 @@ import (
 
 	"github.com/ipedrazas/pulse/api/internal/db"
 	grpcserver "github.com/ipedrazas/pulse/api/internal/grpcserver"
+	"github.com/ipedrazas/pulse/api/internal/repository"
 	"github.com/ipedrazas/pulse/api/internal/rest"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
@@ -84,6 +85,8 @@ func setupTestEnv(t *testing.T) *testEnv {
 	}
 	t.Cleanup(func() { pool.Close() })
 
+	repo := repository.NewPostgresRepo(pool)
+
 	// Start gRPC server
 	grpcLis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -92,14 +95,14 @@ func setupTestEnv(t *testing.T) *testEnv {
 	grpcSrv := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(testToken)),
 	)
-	monitorv1.RegisterMonitoringServiceServer(grpcSrv, grpcserver.NewMonitoringService(pool, nil))
+	monitorv1.RegisterMonitoringServiceServer(grpcSrv, grpcserver.NewMonitoringService(repo, repo, repo, nil))
 	go grpcSrv.Serve(grpcLis)
 	t.Cleanup(func() { grpcSrv.GracefulStop() })
 
 	// Start HTTP server
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := rest.NewHandler(pool, testToken)
+	handler := rest.NewHandler(repo, testToken)
 	handler.RegisterRoutes(router)
 
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")

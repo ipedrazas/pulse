@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	grpcserver "github.com/ipedrazas/pulse/api/internal/grpcserver"
+	"github.com/ipedrazas/pulse/api/internal/repository"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
 
@@ -68,7 +69,8 @@ func TestGRPCReconnectAfterServerRestart(t *testing.T) {
 	newSrv := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcserver.TokenAuthInterceptor(testToken)),
 	)
-	monitorv1.RegisterMonitoringServiceServer(newSrv, grpcserver.NewMonitoringService(env.pool, nil))
+	repo := repository.NewPostgresRepo(env.pool)
+	monitorv1.RegisterMonitoringServiceServer(newSrv, grpcserver.NewMonitoringService(repo, repo, repo, nil))
 	go newSrv.Serve(lis)
 	t.Cleanup(func() { newSrv.GracefulStop() })
 

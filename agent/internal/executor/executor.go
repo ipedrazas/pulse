@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"time"
 
@@ -33,11 +34,13 @@ func Run(ctx context.Context, cmd *monitorv1.Command, allowedActions map[string]
 		return Result{Output: fmt.Sprintf("action %q not allowed", cmd.Action)}
 	}
 
+	slog.Debug("executor.Run", "action", cmd.Action, "target", cmd.Target, "params", cmd.Params)
+
 	switch cmd.Action {
 	case "compose_update":
-		return runCompose(ctx, cmd.Target, dirLookup, "pull", "up -d")
+		return runCompose(ctx, cmd.Target, cmd.Params["compose_dir"], dirLookup, "pull", "up -d")
 	case "compose_restart":
-		return runCompose(ctx, cmd.Target, dirLookup, "restart")
+		return runCompose(ctx, cmd.Target, cmd.Params["compose_dir"], dirLookup, "restart")
 	case "container_stop":
 		return runContainerAction(ctx, cmd.Target, func() error {
 			return dockerOps.StopContainer(ctx, cmd.Target)
@@ -100,11 +103,20 @@ func runContainerQuery(_ context.Context, containerID string, fn func() (string,
 	}
 }
 
-func runCompose(ctx context.Context, project string, dirLookup func(string) string, subcommands ...string) Result {
-	dir := dirLookup(project)
+func runCompose(ctx context.Context, project, composeDir string, dirLookup func(string) string, subcommands ...string) Result {
+	// Prefer compose_dir from command params (populated by hub), fall back to dirLookup.
+	dir := composeDir
+	slog.Debug("runCompose", "project", project, "compose_dir_param", composeDir, "initial_dir", dir)
 	if dir == "" {
-		return Result{Output: fmt.Sprintf("compose directory not found for project %q", project)}
+		dir = dirLookup(project)
+		slog.Debug("runCompose dirLookup result", "project", project, "dir", dir)
 	}
+	if dir == "" {
+		slog.Error("compose directory not found", "project", project, "compose_dir_param", composeDir)
+		return Result{Output: fmt.Sprintf("compose directory not found for project %q (compose_dir param: %q)", project, composeDir)}
+	}
+
+	slog.Info("running compose command", "project", project, "dir", dir, "subcommands", subcommands)
 
 	var combined bytes.Buffer
 	start := time.Now()

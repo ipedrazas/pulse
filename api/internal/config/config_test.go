@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"testing"
 )
@@ -58,5 +59,43 @@ func TestLoad_CustomPorts(t *testing.T) {
 	}
 	if cfg.HTTPPort != "3000" {
 		t.Errorf("expected HTTP_PORT 3000, got %s", cfg.HTTPPort)
+	}
+}
+
+func TestLoad_LogLevelDefault(t *testing.T) {
+	t.Setenv("DB_URL", "postgres://localhost/test")
+	t.Setenv("MONITOR_TOKEN", "secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LogLevel != slog.LevelInfo {
+		t.Errorf("expected default LogLevel Info, got %v", cfg.LogLevel)
+	}
+}
+
+func TestLoad_LogLevelCustom(t *testing.T) {
+	t.Setenv("DB_URL", "postgres://localhost/test")
+	t.Setenv("MONITOR_TOKEN", "secret")
+	t.Setenv("LOG_LEVEL", "debug")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LogLevel != slog.LevelDebug {
+		t.Errorf("expected LogLevel Debug, got %v", cfg.LogLevel)
+	}
+}
+
+func TestLoad_LogLevelInvalid(t *testing.T) {
+	t.Setenv("DB_URL", "postgres://localhost/test")
+	t.Setenv("MONITOR_TOKEN", "secret")
+	t.Setenv("LOG_LEVEL", "not-a-level")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid LOG_LEVEL")
 	}
 }
