@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 )
 
@@ -20,6 +24,9 @@ type DockerOps interface {
 	RestartContainer(ctx context.Context, containerID string) error
 	ContainerLogs(ctx context.Context, containerID string, tail string) (string, error)
 	InspectContainer(ctx context.Context, containerID string) (string, error)
+	PullImage(ctx context.Context, image string) error
+	ListProjectContainers(ctx context.Context, project string) ([]ContainerInfo, error)
+	RecreateContainer(ctx context.Context, containerID string) error
 }
 
 // ContainerInfo holds the extracted data from a running Docker container.
@@ -132,6 +139,103 @@ func (p *Poller) InspectContainer(ctx context.Context, containerID string) (stri
 		return "", fmt.Errorf("marshaling inspect: %w", err)
 	}
 	return string(data), nil
+}
+
+// PullImage pulls a Docker image, draining the response reader to completion.
+func (p *Poller) PullImage(ctx context.Context, img string) error {
+	reader, err := p.client.ImagePull(ctx, img, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pulling image %s: %w", img, err)
+	}
+	defer reader.Close()
+	// Docker won't finish pulling until the reader is fully consumed.
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		return fmt.Errorf("reading pull response for %s: %w", img, err)
+	}
+	return nil
+}
+
+// ListProjectContainers returns all containers belonging to a Docker Compose project.
+func (p *Poller) ListProjectContainers(ctx context.Context, project string) ([]ContainerInfo, error) {
+	f := filters.NewArgs(filters.Arg("label", "com.docker.compose.project="+project))
+	containers, err := p.client.ContainerList(ctx, container.ListOptions{All: true, Filters: f})
+	if err != nil {
+		return nil, fmt.Errorf("listing containers for project %s: %w", project, err)
+	}
+
+	results := make([]ContainerInfo, 0, len(containers))
+	for _, c := range containers {
+		info, err := p.inspect(ctx, c)
+		if err != nil {
+			continue
+		}
+		results = append(results, info)
+	}
+	return results, nil
+}
+
+// RecreateContainer stops, removes, and recreates a container with the same
+// configuration. Named volumes are preserved (RemoveVolumes is not set).
+func (p *Poller) RecreateContainer(ctx context.Context, containerID string) error {
+	// 1. Inspect to capture current config.
+	detail, err := p.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("inspecting container %s: %w", containerID, err)
+	}
+
+	name := strings.TrimPrefix(detail.Name, "/")
+
+	// 2. Stop the container (ignore "not running" errors).
+	if err := p.client.ContainerStop(ctx, containerID, container.StopOptions{}); err != nil {
+		slog.Warn("stop before recreate failed (may already be stopped)", "container", name, "error", err)
+	}
+
+	// 3. Remove the old container.
+	if err := p.client.ContainerRemove(ctx, containerID, container.RemoveOptions{}); err != nil {
+		return fmt.Errorf("removing container %s: %w", name, err)
+	}
+
+	// 4. Prepare networking — first network goes into ContainerCreate,
+	//    additional networks are connected after create.
+	var networkingConfig *network.NetworkingConfig
+	var extraNetworks []string
+
+	if detail.NetworkSettings != nil && len(detail.NetworkSettings.Networks) > 0 {
+		first := true
+		for netName := range detail.NetworkSettings.Networks {
+			if first {
+				networkingConfig = &network.NetworkingConfig{
+					EndpointsConfig: map[string]*network.EndpointSettings{
+						netName: {},
+					},
+				}
+				first = false
+			} else {
+				extraNetworks = append(extraNetworks, netName)
+			}
+		}
+	}
+
+	// 5. Create a new container with the same config.
+	resp, err := p.client.ContainerCreate(ctx, detail.Config, detail.HostConfig, networkingConfig, nil, name)
+	if err != nil {
+		return fmt.Errorf("creating container %s: %w", name, err)
+	}
+
+	// 6. Connect additional networks.
+	for _, netName := range extraNetworks {
+		if err := p.client.NetworkConnect(ctx, netName, resp.ID, &network.EndpointSettings{}); err != nil {
+			slog.Warn("failed to connect extra network", "container", name, "network", netName, "error", err)
+		}
+	}
+
+	// 7. Start the new container.
+	if err := p.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		return fmt.Errorf("starting container %s: %w", name, err)
+	}
+
+	slog.Info("container recreated", "name", name, "old_id", containerID, "new_id", resp.ID)
+	return nil
 }
 
 // Poll returns info for all running containers.

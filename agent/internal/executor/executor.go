@@ -1,11 +1,10 @@
 package executor
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/ipedrazas/pulse/agent/internal/docker"
@@ -22,14 +21,9 @@ type Result struct {
 	DurationMs int64
 }
 
-// Run executes a command and returns the result. It looks up the compose
-// working directory from the containers on this node via the dirLookup function.
-//
-// dirLookup takes a compose project name and returns the working directory
-// where the compose file lives (from com.docker.compose.project.working_dir).
-//
-// dockerOps provides direct Docker API operations for container-level actions.
-func Run(ctx context.Context, cmd *monitorv1.Command, allowedActions map[string]bool, dirLookup func(project string) string, dockerOps docker.DockerOps) Result {
+// Run executes a command and returns the result.
+// dockerOps provides Docker API operations for all container and compose actions.
+func Run(ctx context.Context, cmd *monitorv1.Command, allowedActions map[string]bool, dockerOps docker.DockerOps) Result {
 	if !allowedActions[cmd.Action] {
 		return Result{Output: fmt.Sprintf("action %q not allowed", cmd.Action)}
 	}
@@ -38,9 +32,9 @@ func Run(ctx context.Context, cmd *monitorv1.Command, allowedActions map[string]
 
 	switch cmd.Action {
 	case "compose_update":
-		return runCompose(ctx, cmd.Target, cmd.Params["compose_dir"], dirLookup, "pull", "up -d")
+		return runComposeUpdate(ctx, cmd.Target, dockerOps)
 	case "compose_restart":
-		return runCompose(ctx, cmd.Target, cmd.Params["compose_dir"], dirLookup, "restart")
+		return runComposeRestart(ctx, cmd.Target, dockerOps)
 	case "container_stop":
 		return runContainerAction(ctx, cmd.Target, func() error {
 			return dockerOps.StopContainer(ctx, cmd.Target)
@@ -103,56 +97,100 @@ func runContainerQuery(_ context.Context, containerID string, fn func() (string,
 	}
 }
 
-func runCompose(ctx context.Context, project, composeDir string, dirLookup func(string) string, subcommands ...string) Result {
-	// Prefer compose_dir from command params (populated by hub), fall back to dirLookup.
-	dir := composeDir
-	slog.Debug("runCompose", "project", project, "compose_dir_param", composeDir, "initial_dir", dir)
-	if dir == "" {
-		dir = dirLookup(project)
-		slog.Debug("runCompose dirLookup result", "project", project, "dir", dir)
-	}
-	if dir == "" {
-		slog.Error("compose directory not found", "project", project, "compose_dir_param", composeDir)
-		return Result{Output: fmt.Sprintf("compose directory not found for project %q (compose_dir param: %q)", project, composeDir)}
-	}
-
-	slog.Info("running compose command", "project", project, "dir", dir, "subcommands", subcommands)
-
-	var combined bytes.Buffer
+// runComposeUpdate pulls images and recreates all containers in a compose project.
+// Best-effort: continues on partial failures and reports all results.
+func runComposeUpdate(ctx context.Context, project string, ops docker.DockerOps) Result {
 	start := time.Now()
 
-	for _, sub := range subcommands {
-		args := []string{"compose"}
-		args = append(args, splitArgs(sub)...)
+	containers, err := ops.ListProjectContainers(ctx, project)
+	if err != nil {
+		return Result{
+			Output:     fmt.Sprintf("listing containers for project %q: %v", project, err),
+			DurationMs: time.Since(start).Milliseconds(),
+		}
+	}
+	if len(containers) == 0 {
+		return Result{
+			Success:    true,
+			Output:     fmt.Sprintf("no containers found for project %q", project),
+			DurationMs: time.Since(start).Milliseconds(),
+		}
+	}
 
-		c := exec.CommandContext(ctx, "docker", args...)
-		c.Dir = dir
-		c.Stdout = &combined
-		c.Stderr = &combined
+	var msgs []string
+	anyErr := false
 
-		if err := c.Run(); err != nil {
-			combined.WriteString(fmt.Sprintf("\n--- error: %v\n", err))
-			return Result{
-				Output:     truncate(combined.String(), maxOutputBytes),
-				DurationMs: time.Since(start).Milliseconds(),
-			}
+	// Pull images (deduplicated).
+	pulled := make(map[string]bool)
+	for _, c := range containers {
+		if pulled[c.Image] {
+			continue
+		}
+		pulled[c.Image] = true
+		slog.Info("pulling image", "project", project, "image", c.Image)
+		if err := ops.PullImage(ctx, c.Image); err != nil {
+			anyErr = true
+			msgs = append(msgs, fmt.Sprintf("pull %s: %v", c.Image, err))
+		} else {
+			msgs = append(msgs, fmt.Sprintf("pull %s: ok", c.Image))
+		}
+	}
+
+	// Recreate each container.
+	for _, c := range containers {
+		slog.Info("recreating container", "project", project, "container", c.Name)
+		if err := ops.RecreateContainer(ctx, c.ID); err != nil {
+			anyErr = true
+			msgs = append(msgs, fmt.Sprintf("recreate %s: %v", c.Name, err))
+		} else {
+			msgs = append(msgs, fmt.Sprintf("recreate %s: ok", c.Name))
 		}
 	}
 
 	return Result{
-		Success:    true,
-		Output:     truncate(combined.String(), maxOutputBytes),
+		Success:    !anyErr,
+		Output:     truncate(strings.Join(msgs, "\n"), maxOutputBytes),
 		DurationMs: time.Since(start).Milliseconds(),
 	}
 }
 
-func splitArgs(s string) []string {
-	// Simple space split — sufficient for our known subcommands.
-	var args []string
-	for _, a := range bytes.Fields([]byte(s)) {
-		args = append(args, string(a))
+// runComposeRestart restarts all containers in a compose project.
+func runComposeRestart(ctx context.Context, project string, ops docker.DockerOps) Result {
+	start := time.Now()
+
+	containers, err := ops.ListProjectContainers(ctx, project)
+	if err != nil {
+		return Result{
+			Output:     fmt.Sprintf("listing containers for project %q: %v", project, err),
+			DurationMs: time.Since(start).Milliseconds(),
+		}
 	}
-	return args
+	if len(containers) == 0 {
+		return Result{
+			Success:    true,
+			Output:     fmt.Sprintf("no containers found for project %q", project),
+			DurationMs: time.Since(start).Milliseconds(),
+		}
+	}
+
+	var msgs []string
+	anyErr := false
+
+	for _, c := range containers {
+		slog.Info("restarting container", "project", project, "container", c.Name)
+		if err := ops.RestartContainer(ctx, c.ID); err != nil {
+			anyErr = true
+			msgs = append(msgs, fmt.Sprintf("restart %s: %v", c.Name, err))
+		} else {
+			msgs = append(msgs, fmt.Sprintf("restart %s: ok", c.Name))
+		}
+	}
+
+	return Result{
+		Success:    !anyErr,
+		Output:     truncate(strings.Join(msgs, "\n"), maxOutputBytes),
+		DurationMs: time.Since(start).Milliseconds(),
+	}
 }
 
 func truncate(s string, maxBytes int) string {

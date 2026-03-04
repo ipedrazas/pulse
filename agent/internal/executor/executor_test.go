@@ -6,18 +6,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ipedrazas/pulse/agent/internal/docker"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
 
 // mockDockerOps implements docker.DockerOps for testing.
 type mockDockerOps struct {
-	stopErr    error
-	startErr   error
-	restartErr error
-	logsOutput string
-	logsErr    error
-	inspectOut string
-	inspectErr error
+	stopErr     error
+	startErr    error
+	restartErr  error
+	logsOutput  string
+	logsErr     error
+	inspectOut  string
+	inspectErr  error
+	pullErr     error
+	listContain []docker.ContainerInfo
+	listErr     error
+	recreateErr error
 }
 
 func (m *mockDockerOps) StopContainer(_ context.Context, _ string) error {
@@ -35,8 +40,16 @@ func (m *mockDockerOps) ContainerLogs(_ context.Context, _ string, _ string) (st
 func (m *mockDockerOps) InspectContainer(_ context.Context, _ string) (string, error) {
 	return m.inspectOut, m.inspectErr
 }
+func (m *mockDockerOps) PullImage(_ context.Context, _ string) error {
+	return m.pullErr
+}
+func (m *mockDockerOps) ListProjectContainers(_ context.Context, _ string) ([]docker.ContainerInfo, error) {
+	return m.listContain, m.listErr
+}
+func (m *mockDockerOps) RecreateContainer(_ context.Context, _ string) error {
+	return m.recreateErr
+}
 
-var noopLookup = func(string) string { return "/tmp" }
 var noopDocker = &mockDockerOps{}
 
 func TestRun_DisallowedAction(t *testing.T) {
@@ -47,7 +60,7 @@ func TestRun_DisallowedAction(t *testing.T) {
 	}
 	allowed := map[string]bool{} // nothing allowed
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, noopDocker)
+	result := Run(context.Background(), cmd, allowed, noopDocker)
 
 	if result.Success {
 		t.Error("expected failure for disallowed action")
@@ -65,7 +78,7 @@ func TestRun_UnknownAction(t *testing.T) {
 	}
 	allowed := map[string]bool{"nuke_everything": true}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, noopDocker)
+	result := Run(context.Background(), cmd, allowed, noopDocker)
 
 	if result.Success {
 		t.Error("expected failure for unknown action")
@@ -75,22 +88,118 @@ func TestRun_UnknownAction(t *testing.T) {
 	}
 }
 
-func TestRun_MissingComposeDir(t *testing.T) {
+func TestRun_ComposeUpdate_Success(t *testing.T) {
 	cmd := &monitorv1.Command{
-		CommandId: "cmd-3",
+		CommandId: "cmd-update",
 		Action:    "compose_update",
-		Target:    "nonexistent",
+		Target:    "mystack",
 	}
 	allowed := map[string]bool{"compose_update": true}
-	lookup := func(string) string { return "" } // not found
+	mock := &mockDockerOps{
+		listContain: []docker.ContainerInfo{
+			{ID: "c1", Name: "web", Image: "nginx:latest"},
+			{ID: "c2", Name: "api", Image: "myapp:latest"},
+		},
+	}
 
-	result := Run(context.Background(), cmd, allowed, lookup, noopDocker)
+	result := Run(context.Background(), cmd, allowed, mock)
+
+	if !result.Success {
+		t.Errorf("expected success, got output: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "pull nginx:latest: ok") {
+		t.Errorf("expected pull ok in output, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "recreate web: ok") {
+		t.Errorf("expected recreate ok in output, got %q", result.Output)
+	}
+}
+
+func TestRun_ComposeUpdate_NoContainers(t *testing.T) {
+	cmd := &monitorv1.Command{
+		CommandId: "cmd-update-empty",
+		Action:    "compose_update",
+		Target:    "emptyproject",
+	}
+	allowed := map[string]bool{"compose_update": true}
+	mock := &mockDockerOps{listContain: nil}
+
+	result := Run(context.Background(), cmd, allowed, mock)
+
+	if !result.Success {
+		t.Errorf("expected success for empty project, got output: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "no containers found") {
+		t.Errorf("expected 'no containers found' in output, got %q", result.Output)
+	}
+}
+
+func TestRun_ComposeUpdate_PullError(t *testing.T) {
+	cmd := &monitorv1.Command{
+		CommandId: "cmd-update-pullerr",
+		Action:    "compose_update",
+		Target:    "mystack",
+	}
+	allowed := map[string]bool{"compose_update": true}
+	mock := &mockDockerOps{
+		listContain: []docker.ContainerInfo{
+			{ID: "c1", Name: "web", Image: "nginx:latest"},
+		},
+		pullErr: fmt.Errorf("pull denied"),
+	}
+
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if result.Success {
-		t.Error("expected failure when compose dir not found")
+		t.Error("expected failure when pull errors")
 	}
-	if !strings.Contains(result.Output, "compose directory not found") {
-		t.Errorf("expected 'compose directory not found' in output, got %q", result.Output)
+	if !strings.Contains(result.Output, "pull denied") {
+		t.Errorf("expected pull error in output, got %q", result.Output)
+	}
+}
+
+func TestRun_ComposeUpdate_ListError(t *testing.T) {
+	cmd := &monitorv1.Command{
+		CommandId: "cmd-update-listerr",
+		Action:    "compose_update",
+		Target:    "mystack",
+	}
+	allowed := map[string]bool{"compose_update": true}
+	mock := &mockDockerOps{
+		listErr: fmt.Errorf("daemon unreachable"),
+	}
+
+	result := Run(context.Background(), cmd, allowed, mock)
+
+	if result.Success {
+		t.Error("expected failure when list errors")
+	}
+	if !strings.Contains(result.Output, "daemon unreachable") {
+		t.Errorf("expected list error in output, got %q", result.Output)
+	}
+}
+
+func TestRun_ComposeRestart_Success(t *testing.T) {
+	cmd := &monitorv1.Command{
+		CommandId: "cmd-restart-compose",
+		Action:    "compose_restart",
+		Target:    "mystack",
+	}
+	allowed := map[string]bool{"compose_restart": true}
+	mock := &mockDockerOps{
+		listContain: []docker.ContainerInfo{
+			{ID: "c1", Name: "web", Image: "nginx:latest"},
+			{ID: "c2", Name: "api", Image: "myapp:latest"},
+		},
+	}
+
+	result := Run(context.Background(), cmd, allowed, mock)
+
+	if !result.Success {
+		t.Errorf("expected success, got output: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "restart web: ok") {
+		t.Errorf("expected restart ok in output, got %q", result.Output)
 	}
 }
 
@@ -103,7 +212,7 @@ func TestRun_ContainerStop_Success(t *testing.T) {
 	allowed := map[string]bool{"container_stop": true}
 	mock := &mockDockerOps{}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, mock)
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if !result.Success {
 		t.Errorf("expected success, got output: %s", result.Output)
@@ -122,7 +231,7 @@ func TestRun_ContainerStop_Error(t *testing.T) {
 	allowed := map[string]bool{"container_stop": true}
 	mock := &mockDockerOps{stopErr: fmt.Errorf("no such container")}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, mock)
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if result.Success {
 		t.Error("expected failure")
@@ -141,7 +250,7 @@ func TestRun_ContainerStart_Success(t *testing.T) {
 	allowed := map[string]bool{"container_start": true}
 	mock := &mockDockerOps{}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, mock)
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if !result.Success {
 		t.Errorf("expected success, got output: %s", result.Output)
@@ -157,7 +266,7 @@ func TestRun_ContainerRestart_Success(t *testing.T) {
 	allowed := map[string]bool{"container_restart": true}
 	mock := &mockDockerOps{}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, mock)
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if !result.Success {
 		t.Errorf("expected success, got output: %s", result.Output)
@@ -174,7 +283,7 @@ func TestRun_ContainerLogs_Success(t *testing.T) {
 	allowed := map[string]bool{"container_logs": true}
 	mock := &mockDockerOps{logsOutput: "line1\nline2\nline3"}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, mock)
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if !result.Success {
 		t.Errorf("expected success, got output: %s", result.Output)
@@ -193,7 +302,7 @@ func TestRun_ContainerLogs_Error(t *testing.T) {
 	allowed := map[string]bool{"container_logs": true}
 	mock := &mockDockerOps{logsErr: fmt.Errorf("container not found")}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, mock)
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if result.Success {
 		t.Error("expected failure")
@@ -212,7 +321,7 @@ func TestRun_ContainerInspect_Success(t *testing.T) {
 	allowed := map[string]bool{"container_inspect": true}
 	mock := &mockDockerOps{inspectOut: `{"Id": "abc123", "Name": "/test"}`}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, mock)
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if !result.Success {
 		t.Errorf("expected success, got output: %s", result.Output)
@@ -231,7 +340,7 @@ func TestRun_ContainerInspect_Error(t *testing.T) {
 	allowed := map[string]bool{"container_inspect": true}
 	mock := &mockDockerOps{inspectErr: fmt.Errorf("no such container")}
 
-	result := Run(context.Background(), cmd, allowed, noopLookup, mock)
+	result := Run(context.Background(), cmd, allowed, mock)
 
 	if result.Success {
 		t.Error("expected failure")
@@ -254,12 +363,5 @@ func TestTruncate(t *testing.T) {
 	}
 	if !strings.Contains(result, "truncated") {
 		t.Error("expected truncation suffix")
-	}
-}
-
-func TestSplitArgs(t *testing.T) {
-	args := splitArgs("up -d")
-	if len(args) != 2 || args[0] != "up" || args[1] != "-d" {
-		t.Errorf("expected [up -d], got %v", args)
 	}
 }

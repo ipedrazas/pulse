@@ -175,14 +175,10 @@ func executeCommands(ctx context.Context, client *grpcclient.Client, poller *doc
 		return
 	}
 
-	// Build a lookup from compose project → working directory using
-	// the labels already available from local Docker containers.
-	dirLookup := buildComposeDirLookup(ctx, poller)
-
 	for _, cmd := range commands {
 		slog.Info("executing command", "command_id", cmd.CommandId, "action", cmd.Action, "target", cmd.Target)
 
-		result := executor.Run(ctx, cmd, cfg.AllowedActions, dirLookup, poller)
+		result := executor.Run(ctx, cmd, cfg.AllowedActions, poller)
 
 		if err := client.ReportCommandResult(ctx, &monitorv1.ReportCommandResultRequest{
 			CommandId:  cmd.CommandId,
@@ -199,28 +195,5 @@ func executeCommands(ctx context.Context, client *grpcclient.Client, poller *doc
 			level = slog.LevelError
 		}
 		slog.Log(ctx, level, "command completed", "command_id", cmd.CommandId, "success", result.Success, "duration_ms", result.DurationMs)
-	}
-}
-
-// buildComposeDirLookup polls local Docker containers and builds a map
-// from compose project name to the working directory where the compose file lives.
-func buildComposeDirLookup(ctx context.Context, poller *docker.Poller) func(string) string {
-	containers, err := poller.Poll(ctx)
-	if err != nil {
-		slog.Error("failed to poll containers for dir lookup", "error", err)
-		return func(string) string { return "" }
-	}
-
-	dirs := make(map[string]string)
-	for _, c := range containers {
-		project := c.Labels["com.docker.compose.project"]
-		dir := c.Labels["com.docker.compose.project.working_dir"]
-		if project != "" && dir != "" {
-			dirs[project] = dir
-		}
-	}
-
-	return func(project string) string {
-		return dirs[project]
 	}
 }
