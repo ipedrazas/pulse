@@ -1,1 +1,0 @@
-ALTER TABLE containers ADD COLUMN labels JSONB NOT NULL DEFAULT '{}';

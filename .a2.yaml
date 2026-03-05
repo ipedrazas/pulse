@@ -4,15 +4,18 @@
 # Run checks with: a2 check -v
 
 language:
-  explicit: [go, typescript]  # Override auto-detection
+  explicit: [go, typescript, rust]  # Override auto-detection
   go:
-    source_dir: [api, agent]
+    source_dir: [api, cli]
     coverage_threshold: 50
 
   typescript:
     source_dir: [ui]
     coverage_threshold: 50
-
+  
+  rust:
+    source_dir: [agent]
+    coverage_threshold: 50
 #
 files:
   required:
