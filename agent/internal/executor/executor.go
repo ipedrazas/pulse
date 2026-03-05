@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/ipedrazas/pulse/agent/internal/docker"
 	monitorv1 "github.com/ipedrazas/pulse/proto/monitor/v1"
 )
+
+// selfContainerID is the short container ID of the agent itself.
+// Docker sets the hostname to the 12-char container ID by default.
+var selfContainerID, _ = os.Hostname()
 
 const maxOutputBytes = 10 * 1024       // 10 KB
 const maxLargeOutputBytes = 128 * 1024 // 128 KB for logs/inspect
@@ -97,6 +102,11 @@ func runContainerQuery(_ context.Context, containerID string, fn func() (string,
 	}
 }
 
+// isSelf returns true if the container ID belongs to this agent process.
+func isSelf(containerID string) bool {
+	return selfContainerID != "" && strings.HasPrefix(containerID, selfContainerID)
+}
+
 // runComposeUpdate pulls images and recreates all containers in a compose project.
 // Best-effort: continues on partial failures and reports all results.
 func runComposeUpdate(ctx context.Context, project string, ops docker.DockerOps) Result {
@@ -136,8 +146,13 @@ func runComposeUpdate(ctx context.Context, project string, ops docker.DockerOps)
 		}
 	}
 
-	// Recreate each container.
+	// Recreate each container (skip the agent's own container — it can't recreate itself).
 	for _, c := range containers {
+		if isSelf(c.ID) {
+			slog.Info("skipping self during compose update", "container", c.Name)
+			msgs = append(msgs, fmt.Sprintf("recreate %s: skipped (self)", c.Name))
+			continue
+		}
 		slog.Info("recreating container", "project", project, "container", c.Name)
 		if err := ops.RecreateContainer(ctx, c.ID); err != nil {
 			anyErr = true
@@ -177,6 +192,11 @@ func runComposeRestart(ctx context.Context, project string, ops docker.DockerOps
 	anyErr := false
 
 	for _, c := range containers {
+		if isSelf(c.ID) {
+			slog.Info("skipping self during compose restart", "container", c.Name)
+			msgs = append(msgs, fmt.Sprintf("restart %s: skipped (self)", c.Name))
+			continue
+		}
 		slog.Info("restarting container", "project", project, "container", c.Name)
 		if err := ops.RestartContainer(ctx, c.ID); err != nil {
 			anyErr = true

@@ -190,8 +190,8 @@ func (p *Poller) RecreateContainer(ctx context.Context, containerID string) erro
 		slog.Warn("stop before recreate failed (may already be stopped)", "container", name, "error", err)
 	}
 
-	// 3. Remove the old container.
-	if err := p.client.ContainerRemove(ctx, containerID, container.RemoveOptions{}); err != nil {
+	// 3. Remove the old container (Force handles the case where stop didn't finish cleanly).
+	if err := p.client.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
 		return fmt.Errorf("removing container %s: %w", name, err)
 	}
 
