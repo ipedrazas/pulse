@@ -39,20 +39,23 @@ jobs:
       - name: Generate protos
         run: buf generate
 
+      - name: Init Go workspace
+        run: go work init ./api ./cli ./proto
+
       - name: Build API
-        run: go build ./api/...
+        run: go build github.com/ipedrazas/pulse/api/...
 
       - name: Build CLI
-        run: go build ./cli/...
+        run: go build github.com/ipedrazas/pulse/cli/...
 
       - name: Test API (unit)
-        run: go test ./api/... -v -count=1 -short
+        run: go test github.com/ipedrazas/pulse/api/... -v -count=1 -short
 
       - name: Test API (integration)
-        run: go test ./api/internal/integration/ -v -count=1 -timeout 120s
+        run: go test github.com/ipedrazas/pulse/api/internal/integration/ -v -count=1 -timeout 120s
 
       - name: Test CLI
-        run: go test ./cli/... -v -count=1
+        run: go test github.com/ipedrazas/pulse/cli/... -v -count=1
 
   rust:
     name: Rust (Agent)
