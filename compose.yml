@@ -1,3 +1,4 @@
+name: pulse
 services:
   db:
     image: timescale/timescaledb:latest-pg17

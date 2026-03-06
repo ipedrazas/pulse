@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.1.0] - 2026-03-01
 
 ### Added
+
 - Protocol Buffers definition (`proto/monitor/v1/monitor.proto`) with `MonitoringService` (ReportHeartbeat, SyncMetadata)
 - API server (Hub) with dual gRPC + REST server and graceful shutdown
 - gRPC token authentication interceptor (`x-monitor-token`)

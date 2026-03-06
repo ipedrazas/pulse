@@ -39,7 +39,7 @@ impl DockerPoller {
             }
         };
 
-        let hash = self.compute_hash(&containers);
+        let hash = compute_hash(&containers);
         if hash == self.last_hash {
             return None; // no changes
         }
@@ -152,7 +152,7 @@ impl DockerPoller {
                 mounts,
                 labels,
                 ports,
-                uptime_seconds: uptime_seconds,
+                uptime_seconds,
                 compose_project,
                 command,
             });
@@ -160,26 +160,83 @@ impl DockerPoller {
 
         Ok(infos)
     }
+}
 
-    fn compute_hash(&self, containers: &[ContainerInfo]) -> String {
-        let mut hasher = Sha256::new();
-        for c in containers {
-            hasher.update(c.id.as_bytes());
-            hasher.update(c.image.as_bytes());
-            hasher.update(c.status.as_bytes());
+pub fn compute_hash(containers: &[ContainerInfo]) -> String {
+    let mut hasher = Sha256::new();
+    for c in containers {
+        hasher.update(c.id.as_bytes());
+        hasher.update(c.image.as_bytes());
+        hasher.update(c.status.as_bytes());
 
-            // Sort env keys for deterministic hashing
-            let mut keys: Vec<&String> = c.env_vars.keys().collect();
-            keys.sort();
-            for k in keys {
-                hasher.update(k.as_bytes());
-                hasher.update(c.env_vars[k].as_bytes());
-            }
-
-            for m in &c.mounts {
-                hasher.update(m.as_bytes());
-            }
+        // Sort env keys for deterministic hashing
+        let mut keys: Vec<&String> = c.env_vars.keys().collect();
+        keys.sort();
+        for k in keys {
+            hasher.update(k.as_bytes());
+            hasher.update(c.env_vars[k].as_bytes());
         }
-        hex::encode(hasher.finalize())
+
+        for m in &c.mounts {
+            hasher.update(m.as_bytes());
+        }
+    }
+    hex::encode(hasher.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_container(id: &str, image: &str, status: &str) -> ContainerInfo {
+        ContainerInfo {
+            id: id.to_string(),
+            name: String::new(),
+            image: image.to_string(),
+            status: status.to_string(),
+            env_vars: HashMap::new(),
+            mounts: vec![],
+            labels: HashMap::new(),
+            ports: vec![],
+            uptime_seconds: 0,
+            compose_project: String::new(),
+            command: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_compute_hash_deterministic() {
+        let containers = vec![make_container("c1", "nginx", "running")];
+        let h1 = compute_hash(&containers);
+        let h2 = compute_hash(&containers);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_compute_hash_different_status() {
+        let c1 = vec![make_container("c1", "nginx", "running")];
+        let c2 = vec![make_container("c1", "nginx", "exited")];
+        assert_ne!(compute_hash(&c1), compute_hash(&c2));
+    }
+
+    #[test]
+    fn test_compute_hash_env_key_order_independent() {
+        let mut c1 = make_container("c1", "nginx", "running");
+        c1.env_vars.insert("A".to_string(), "1".to_string());
+        c1.env_vars.insert("B".to_string(), "2".to_string());
+
+        let mut c2 = make_container("c1", "nginx", "running");
+        c2.env_vars.insert("B".to_string(), "2".to_string());
+        c2.env_vars.insert("A".to_string(), "1".to_string());
+
+        assert_eq!(compute_hash(&[c1]), compute_hash(&[c2]));
+    }
+
+    #[test]
+    fn test_compute_hash_empty_containers() {
+        let h = compute_hash(&[]);
+        assert!(!h.is_empty());
+        // Should still produce a valid hex hash
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

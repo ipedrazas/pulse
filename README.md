@@ -44,16 +44,16 @@ task cli:build
 
 ## CLI Commands
 
-| Command | Description |
-|---------|-------------|
-| `pulse nodes` | List all agents |
-| `pulse ps [--node NAME]` | List containers |
-| `pulse run --image IMG --node NAME` | Run a container |
-| `pulse stop CONTAINER --node NAME` | Stop a container |
-| `pulse pull IMAGE --node NAME` | Pull an image |
-| `pulse up -d --node NAME` | Docker compose up |
-| `pulse logs CONTAINER --node NAME` | Request container logs |
-| `pulse send --file PATH --node NAME` | Send a file to agent |
+| Command                              | Description            |
+| ------------------------------------ | ---------------------- |
+| `pulse nodes`                        | List all agents        |
+| `pulse ps [--node NAME]`             | List containers        |
+| `pulse run --image IMG --node NAME`  | Run a container        |
+| `pulse stop CONTAINER --node NAME`   | Stop a container       |
+| `pulse pull IMAGE --node NAME`       | Pull an image          |
+| `pulse up -d --node NAME`            | Docker compose up      |
+| `pulse logs CONTAINER --node NAME`   | Request container logs |
+| `pulse send --file PATH --node NAME` | Send a file to agent   |
 
 ## Development
 

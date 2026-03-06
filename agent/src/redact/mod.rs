@@ -44,4 +44,61 @@ mod tests {
         let result = redact_env_vars(&env, &[]);
         assert_eq!(result["SECRET"], "value");
     }
+
+    #[test]
+    fn test_case_insensitive_match() {
+        let mut env = HashMap::new();
+        env.insert("my_password".to_string(), "secret".to_string());
+        env.insert("My_Secret_Key".to_string(), "value".to_string());
+
+        let patterns = vec!["PASSWORD".to_string(), "SECRET".to_string()];
+        let result = redact_env_vars(&env, &patterns);
+
+        assert_eq!(result["my_password"], "***REDACTED***");
+        assert_eq!(result["My_Secret_Key"], "***REDACTED***");
+    }
+
+    #[test]
+    fn test_partial_key_match() {
+        let mut env = HashMap::new();
+        env.insert("AWS_SECRET_ACCESS_KEY".to_string(), "abc".to_string());
+        env.insert(
+            "DATABASE_URL".to_string(),
+            "postgres://localhost".to_string(),
+        );
+
+        let patterns = vec!["SECRET".to_string()];
+        let result = redact_env_vars(&env, &patterns);
+
+        assert_eq!(result["AWS_SECRET_ACCESS_KEY"], "***REDACTED***");
+        assert_eq!(result["DATABASE_URL"], "postgres://localhost");
+    }
+
+    #[test]
+    fn test_empty_env_map() {
+        let env = HashMap::new();
+        let patterns = vec!["PASSWORD".to_string()];
+        let result = redact_env_vars(&env, &patterns);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_multiple_patterns_all_match() {
+        let mut env = HashMap::new();
+        env.insert("DB_PASSWORD".to_string(), "pw".to_string());
+        env.insert("API_TOKEN".to_string(), "tok".to_string());
+        env.insert("SECRET_KEY".to_string(), "sk".to_string());
+
+        let patterns = vec![
+            "PASSWORD".to_string(),
+            "TOKEN".to_string(),
+            "SECRET".to_string(),
+            "KEY".to_string(),
+        ];
+        let result = redact_env_vars(&env, &patterns);
+
+        assert_eq!(result["DB_PASSWORD"], "***REDACTED***");
+        assert_eq!(result["API_TOKEN"], "***REDACTED***");
+        assert_eq!(result["SECRET_KEY"], "***REDACTED***");
+    }
 }

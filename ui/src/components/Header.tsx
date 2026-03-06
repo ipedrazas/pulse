@@ -1,5 +1,5 @@
 interface HeaderProps {
-  healthy: boolean;
+  healthy: boolean
 }
 
 export function Header({ healthy }: HeaderProps) {
@@ -18,5 +18,5 @@ export function Header({ healthy }: HeaderProps) {
         </div>
       </div>
     </header>
-  );
+  )
 }

@@ -1,11 +1,11 @@
-import type { Agent } from '../types';
-import { formatLastSeen } from '../utils/format';
-import { StatusDot } from './StatusDot';
+import type { Agent } from '../types'
+import { formatLastSeen } from '../utils/format'
+import { StatusDot } from './StatusDot'
 
 interface NodeCardProps {
-  agent: Agent;
-  selected: boolean;
-  onClick: () => void;
+  agent: Agent
+  selected: boolean
+  onClick: () => void
 }
 
 export function NodeCard({ agent, selected, onClick }: NodeCardProps) {
@@ -30,5 +30,5 @@ export function NodeCard({ agent, selected, onClick }: NodeCardProps) {
         <span>{formatLastSeen(agent.last_seen)}</span>
       </div>
     </button>
-  );
+  )
 }

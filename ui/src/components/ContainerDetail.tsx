@@ -1,7 +1,7 @@
-import type { Container } from '../types';
+import type { Container } from '../types'
 
 interface ContainerDetailProps {
-  container: Container;
+  container: Container
 }
 
 export function ContainerDetail({ container }: ContainerDetailProps) {
@@ -43,7 +43,9 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
           <p className="text-sm text-gray-500">None</p>
         ) : (
           container.mounts.map((m, i) => (
-            <p key={i} className="font-mono text-xs text-gray-300">{m}</p>
+            <p key={i} className="font-mono text-xs text-gray-300">
+              {m}
+            </p>
           ))
         )}
       </Section>
@@ -52,13 +54,11 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
         {Object.keys(container.labels).length === 0 ? (
           <p className="text-sm text-gray-500">None</p>
         ) : (
-          Object.entries(container.labels).map(([k, v]) => (
-            <KV key={k} label={k} value={v} mono />
-          ))
+          Object.entries(container.labels).map(([k, v]) => <KV key={k} label={k} value={v} mono />)
         )}
       </Section>
     </div>
-  );
+  )
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -67,7 +67,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">{title}</h4>
       <div className="space-y-1">{children}</div>
     </div>
-  );
+  )
 }
 
 function KV({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
@@ -76,5 +76,5 @@ function KV({ label, value, mono }: { label: string; value: string; mono?: boole
       <span className="text-gray-500">{label}:</span>
       <span className={`text-gray-300 ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
     </div>
-  );
+  )
 }

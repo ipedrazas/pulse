@@ -1,6 +1,7 @@
 package grpcserver
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -40,10 +41,7 @@ func (s *AgentService) StreamLink(stream pulsev1.AgentService_StreamLinkServer) 
 		select {
 		case <-ctx.Done():
 			if nodeName != "" {
-				slog.Info("agent disconnected", "node", nodeName)
-				_ = s.repo.SetAgentStatus(ctx, nodeName, "offline")
-				s.streams.Remove(nodeName)
-				s.notifier.AgentOffline(nodeName)
+				s.disconnectAgent(ctx, nodeName)
 			}
 			return ctx.Err()
 		default:
@@ -56,89 +54,113 @@ func (s *AgentService) StreamLink(stream pulsev1.AgentService_StreamLinkServer) 
 		if err != nil {
 			if nodeName != "" {
 				slog.Warn("stream error", "node", nodeName, "error", err)
-				_ = s.repo.SetAgentStatus(ctx, nodeName, "offline")
-				s.streams.Remove(nodeName)
-				s.notifier.AgentOffline(nodeName)
+				s.disconnectAgent(ctx, nodeName)
 			}
 			return status.Errorf(codes.Internal, "recv: %v", err)
 		}
 
 		switch payload := msg.Payload.(type) {
 		case *pulsev1.AgentMessage_Heartbeat:
-			nodeName = payload.Heartbeat.NodeName
-			now := time.Now()
-			agent := repository.Agent{
-				Name:     nodeName,
-				Status:   "online",
-				Version:  payload.Heartbeat.AgentVersion,
-				LastSeen: &now,
-			}
-			if err := s.repo.UpsertAgent(ctx, agent); err != nil {
-				slog.Error("upsert agent failed", "node", nodeName, "error", err)
-			}
-			s.streams.Set(nodeName, stream)
-			if firstHeartbeat {
-				firstHeartbeat = false
-				slog.Info("agent connected", "node", nodeName)
-				s.notifier.AgentOnline(nodeName)
-			}
-
-			// Send any pending commands
-			cmds, err := s.repo.GetPendingCommands(ctx, nodeName)
-			if err != nil {
-				slog.Error("get pending commands failed", "node", nodeName, "error", err)
-				continue
-			}
-			for _, cmd := range cmds {
-				serverCmd, err := commandToProto(cmd)
-				if err != nil {
-					slog.Error("convert command failed", "id", cmd.ID, "error", err)
-					continue
-				}
-				if err := stream.Send(serverCmd); err != nil {
-					slog.Error("send command failed", "id", cmd.ID, "error", err)
-				}
-			}
+			nodeName = s.handleHeartbeat(ctx, stream, payload.Heartbeat, firstHeartbeat)
+			firstHeartbeat = false
 
 		case *pulsev1.AgentMessage_ContainerReport:
-			report := payload.ContainerReport
-			nodeName = report.NodeName
-
-			var activeIDs []string
-			for _, ci := range report.Containers {
-				activeIDs = append(activeIDs, ci.Id)
-				c := protoToContainer(ci, nodeName)
-				if err := s.repo.UpsertContainer(ctx, c); err != nil {
-					slog.Error("upsert container failed", "id", ci.Id, "error", err)
-				}
-				event := repository.ContainerEvent{
-					Time:          time.Now(),
-					ContainerID:   ci.Id,
-					AgentName:     nodeName,
-					Status:        ci.Status,
-					UptimeSeconds: ci.UptimeSeconds,
-				}
-				if err := s.repo.InsertContainerEvent(ctx, event); err != nil {
-					slog.Error("insert event failed", "id", ci.Id, "error", err)
-				}
-			}
-			if err := s.repo.MarkContainersRemoved(ctx, nodeName, activeIDs); err != nil {
-				slog.Error("mark removed failed", "node", nodeName, "error", err)
-			}
+			nodeName = s.handleContainerReport(ctx, payload.ContainerReport)
 
 		case *pulsev1.AgentMessage_CommandResult:
-			result := payload.CommandResult
-			output := result.Output
-			if result.Error != "" {
-				output = result.Error
-			}
-			if err := s.repo.CompleteCommand(ctx, result.CommandId, output, result.Success); err != nil {
-				slog.Error("complete command failed", "id", result.CommandId, "error", err)
-			}
+			s.handleCommandResult(ctx, payload.CommandResult)
 		}
 	}
 
 	return nil
+}
+
+func (s *AgentService) disconnectAgent(ctx context.Context, nodeName string) {
+	slog.Info("agent disconnected", "node", nodeName)
+	_ = s.repo.SetAgentStatus(ctx, nodeName, "offline")
+	s.streams.Remove(nodeName)
+	s.notifier.AgentOffline(nodeName)
+}
+
+func (s *AgentService) handleHeartbeat(
+	ctx context.Context,
+	stream pulsev1.AgentService_StreamLinkServer,
+	hb *pulsev1.Heartbeat,
+	firstHeartbeat bool,
+) string {
+	nodeName := hb.NodeName
+	now := time.Now()
+	agent := repository.Agent{
+		Name:     nodeName,
+		Status:   "online",
+		Version:  hb.AgentVersion,
+		LastSeen: &now,
+	}
+	if err := s.repo.UpsertAgent(ctx, agent); err != nil {
+		slog.Error("upsert agent failed", "node", nodeName, "error", err)
+	}
+	s.streams.Set(nodeName, stream)
+	if firstHeartbeat {
+		slog.Info("agent connected", "node", nodeName)
+		s.notifier.AgentOnline(nodeName)
+	}
+	s.flushPendingCommands(stream, nodeName)
+	return nodeName
+}
+
+func (s *AgentService) flushPendingCommands(stream pulsev1.AgentService_StreamLinkServer, nodeName string) {
+	cmds, err := s.repo.GetPendingCommands(stream.Context(), nodeName)
+	if err != nil {
+		slog.Error("get pending commands failed", "node", nodeName, "error", err)
+		return
+	}
+	for _, cmd := range cmds {
+		serverCmd, err := commandToProto(cmd)
+		if err != nil {
+			slog.Error("convert command failed", "id", cmd.ID, "error", err)
+			continue
+		}
+		if err := stream.Send(serverCmd); err != nil {
+			slog.Error("send command failed", "id", cmd.ID, "error", err)
+		}
+	}
+}
+
+func (s *AgentService) handleContainerReport(ctx context.Context, report *pulsev1.ContainerReport) string {
+	nodeName := report.NodeName
+
+	var activeIDs []string
+	for _, ci := range report.Containers {
+		activeIDs = append(activeIDs, ci.Id)
+		c := protoToContainer(ci, nodeName)
+		if err := s.repo.UpsertContainer(ctx, c); err != nil {
+			slog.Error("upsert container failed", "id", ci.Id, "error", err)
+		}
+		event := repository.ContainerEvent{
+			Time:          time.Now(),
+			ContainerID:   ci.Id,
+			AgentName:     nodeName,
+			Status:        ci.Status,
+			UptimeSeconds: ci.UptimeSeconds,
+		}
+		if err := s.repo.InsertContainerEvent(ctx, event); err != nil {
+			slog.Error("insert event failed", "id", ci.Id, "error", err)
+		}
+	}
+	if err := s.repo.MarkContainersRemoved(ctx, nodeName, activeIDs); err != nil {
+		slog.Error("mark removed failed", "node", nodeName, "error", err)
+	}
+	return nodeName
+}
+
+func (s *AgentService) handleCommandResult(ctx context.Context, result *pulsev1.CommandResult) {
+	output := result.Output
+	if result.Error != "" {
+		output = result.Error
+	}
+	if err := s.repo.CompleteCommand(ctx, result.CommandId, output, result.Success); err != nil {
+		slog.Error("complete command failed", "id", result.CommandId, "error", err)
+	}
 }
 
 // SendToAgent sends a command to a connected agent via its stream.

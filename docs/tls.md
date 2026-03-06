@@ -61,11 +61,11 @@ openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key \
 
 This produces three files you need:
 
-| File         | Used by   | Purpose                    |
-|------------- |-----------|----------------------------|
-| `ca.crt`     | Agent     | Verify the hub's identity  |
-| `server.crt` | Hub (API) | Server certificate         |
-| `server.key` | Hub (API) | Server private key         |
+| File         | Used by   | Purpose                   |
+| ------------ | --------- | ------------------------- |
+| `ca.crt`     | Agent     | Verify the hub's identity |
+| `server.crt` | Hub (API) | Server certificate        |
+| `server.key` | Hub (API) | Server private key        |
 
 You can discard `server.csr`, `san.cnf`, and `ca.srl`.
 
@@ -86,10 +86,10 @@ cp "$(mkcert -CAROOT)/rootCA.pem" certs/ca.crt
 
 Set two env vars for the API service:
 
-| Variable        | Description              | Required |
-|-----------------|--------------------------|----------|
-| `TLS_CERT_FILE` | Path to `server.crt`     | Both or neither |
-| `TLS_KEY_FILE`  | Path to `server.key`     | Both or neither |
+| Variable        | Description          | Required        |
+| --------------- | -------------------- | --------------- |
+| `TLS_CERT_FILE` | Path to `server.crt` | Both or neither |
+| `TLS_KEY_FILE`  | Path to `server.key` | Both or neither |
 
 If only one is set, the hub will refuse to start.
 
@@ -97,9 +97,9 @@ If only one is set, the hub will refuse to start.
 
 Set one env var for each agent:
 
-| Variable      | Description          | Required |
-|---------------|----------------------|----------|
-| `TLS_CA_FILE` | Path to `ca.crt`     | No       |
+| Variable      | Description      | Required |
+| ------------- | ---------------- | -------- |
+| `TLS_CA_FILE` | Path to `ca.crt` | No       |
 
 When `TLS_CA_FILE` is not set, the agent connects in plaintext (backwards compatible).
 
@@ -180,13 +180,13 @@ For example, if agents connect to `192.168.1.50:50051`, add `IP.2 = 192.168.1.50
 
 ## 8. Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| Hub exits: `failed to load TLS certificate` | Cert or key file not found / wrong format | Check file paths and that files are PEM-encoded |
-| Hub exits: `TLS_CERT_FILE and TLS_KEY_FILE must both be set or both be empty` | Only one of the two is set | Set both or remove both |
-| Agent: `connection refused` or `transport: authentication handshake failed` | Agent using plaintext but hub expects TLS (or vice versa) | Ensure both sides match: either both use TLS or both use plaintext |
-| Agent: `certificate signed by unknown authority` | `TLS_CA_FILE` doesn't match the CA that signed the server cert | Use the correct `ca.crt` |
-| Agent: `certificate is not valid for any names` | Server cert SAN doesn't include the hostname the agent connects to | Regenerate server cert with the correct SAN entries |
+| Symptom                                                                       | Cause                                                              | Fix                                                                |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Hub exits: `failed to load TLS certificate`                                   | Cert or key file not found / wrong format                          | Check file paths and that files are PEM-encoded                    |
+| Hub exits: `TLS_CERT_FILE and TLS_KEY_FILE must both be set or both be empty` | Only one of the two is set                                         | Set both or remove both                                            |
+| Agent: `connection refused` or `transport: authentication handshake failed`   | Agent using plaintext but hub expects TLS (or vice versa)          | Ensure both sides match: either both use TLS or both use plaintext |
+| Agent: `certificate signed by unknown authority`                              | `TLS_CA_FILE` doesn't match the CA that signed the server cert     | Use the correct `ca.crt`                                           |
+| Agent: `certificate is not valid for any names`                               | Server cert SAN doesn't include the hostname the agent connects to | Regenerate server cert with the correct SAN entries                |
 
 ## File Layout Reference
 

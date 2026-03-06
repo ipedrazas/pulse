@@ -4,7 +4,7 @@
 # Run checks with: a2 check -v
 
 language:
-  explicit: [go, typescript, rust]  # Override auto-detection
+  explicit: [go, typescript, rust] # Override auto-detection
   go:
     source_dir: [api, cli]
     coverage_threshold: 50
@@ -12,7 +12,7 @@ language:
   typescript:
     source_dir: [ui]
     coverage_threshold: 50
-  
+
   rust:
     source_dir: [agent]
     coverage_threshold: 50
@@ -41,3 +41,5 @@ checks:
     - common:license
     - typescript:logging
     - common:retry
+    - common:api_docs
+    - go:logging

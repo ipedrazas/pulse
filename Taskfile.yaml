@@ -54,6 +54,12 @@ tasks:
     cmds:
       - go run ./cmd/api
 
+  api:fmt:
+    desc: FMT API code
+    dir: api
+    cmds:
+      - gofmt -w .
+
   # --- CLI (Go) ---
   cli:build:
     desc: Build the CLI
@@ -74,6 +80,12 @@ tasks:
     dir: cli
     cmds:
       - golangci-lint run ./...
+
+  cli:fmt:
+    desc: FMT cli code
+    dir: cli
+    cmds:
+      - gofmt -w .
 
   # --- Agent (Rust) ---
   agent:build:
@@ -106,6 +118,28 @@ tasks:
     cmds:
       - cargo run
 
+  agent:release:darwin-arm64:
+    desc: Build agent release binary for macOS (arm64)
+    dir: agent
+    cmds:
+      - cargo build --release --target aarch64-apple-darwin
+      - cp target/aarch64-apple-darwin/release/pulse-agent bin/pulse-agent-darwin-arm64
+
+  agent:release:linux-amd64:
+    desc: Build agent release binary for Linux (amd64)
+    dir: agent
+    cmds:
+      - cargo build --release --target x86_64-unknown-linux-gnu
+      - cp target/x86_64-unknown-linux-gnu/release/pulse-agent bin/pulse-agent-linux-amd64
+
+  agent:release:
+    desc: Build agent release binaries for all platforms
+    dir: agent
+    cmds:
+      - mkdir -p bin
+      - task: agent:release:darwin-arm64
+      - task: agent:release:linux-amd64
+
   # --- UI (React) ---
   ui:install:
     desc: Install UI dependencies
@@ -136,6 +170,12 @@ tasks:
     dir: ui
     cmds:
       - npm test
+
+  ui:fmt:
+    desc: Format ui code
+    dirs: ui
+    cmds:
+      - npx prettier --write .
 
   # --- Docker Images ---
   docker:api:
@@ -213,3 +253,11 @@ tasks:
       - rm -f {{.API_BIN}} {{.CLI_BIN}}
       - cd agent && cargo clean
       - cd ui && rm -rf dist
+
+  fmt:
+    desc: Format code
+    cmds:
+      - task api:fmt
+      - task cli:fmt
+      - task agent:fmt
+      - task ui:fmt

@@ -37,11 +37,11 @@ go test github.com/ipedrazas/pulse/api/internal/integration -v -timeout 120s
 
 This is a Go workspace with three modules:
 
-| Module | Purpose |
-|---|---|
+| Module   | Purpose                                    |
+| -------- | ------------------------------------------ |
 | `proto/` | Protobuf definitions and generated Go code |
-| `api/` | Hub API server (gRPC + REST + migrations) |
-| `agent/` | Edge agent (Docker poller + gRPC client) |
+| `api/`   | Hub API server (gRPC + REST + migrations)  |
+| `agent/` | Edge agent (Docker poller + gRPC client)   |
 
 ### Workflow
 

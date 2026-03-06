@@ -27,15 +27,15 @@ docker run -d \
 
 All configuration is via environment variables.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PULSE_API_ADDR` | gRPC address of the API server | `http://localhost:9090` |
-| `PULSE_NODE_NAME` | Name this agent registers as | System hostname |
-| `PULSE_POLL_INTERVAL` | Seconds between Docker polls | `30` |
+| Variable                | Description                                     | Default                                |
+| ----------------------- | ----------------------------------------------- | -------------------------------------- |
+| `PULSE_API_ADDR`        | gRPC address of the API server                  | `http://localhost:9090`                |
+| `PULSE_NODE_NAME`       | Name this agent registers as                    | System hostname                        |
+| `PULSE_POLL_INTERVAL`   | Seconds between Docker polls                    | `30`                                   |
 | `PULSE_REDACT_PATTERNS` | Comma-separated env var name patterns to redact | `PASSWORD,SECRET,KEY,TOKEN,CREDENTIAL` |
-| `PULSE_TLS_CERT` | Path to TLS client certificate | _(none)_ |
-| `PULSE_TLS_KEY` | Path to TLS client key | _(none)_ |
-| `PULSE_TLS_CA` | Path to TLS CA certificate | _(none)_ |
+| `PULSE_TLS_CERT`        | Path to TLS client certificate                  | _(none)_                               |
+| `PULSE_TLS_KEY`         | Path to TLS client key                          | _(none)_                               |
+| `PULSE_TLS_CA`          | Path to TLS CA certificate                      | _(none)_                               |
 
 ## How It Works
 

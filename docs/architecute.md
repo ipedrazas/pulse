@@ -25,11 +25,10 @@ graph TD
     CLI -- "gRPC / REST" --> API
     UI -- "REST / JSON" --> API
     API -- "Query / Store" --> DB
-    
+
     %% Agent Connection
     Agent -- "1. Long-lived gRPC Stream" --> GRPC_S
     Agent -- "2. Heartbeat & Metadata" --> GRPC_S
     GRPC_S -- "3. RunContainer Command" --> Agent
     Agent -- "4. Spawns" --> Docker
 ```
-
