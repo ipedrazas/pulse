@@ -78,9 +78,10 @@ export default function App() {
           {containers.loading && <Spinner />}
           {containers.error && <p className="text-sm text-red-400">Error: {containers.error}</p>}
 
-          {containers.data && (!containers.data.containers || containers.data.containers.length === 0) && (
-            <EmptyState message="No containers found" />
-          )}
+          {containers.data &&
+            (!containers.data.containers || containers.data.containers.length === 0) && (
+              <EmptyState message="No containers found" />
+            )}
 
           {containers.data?.containers && containers.data.containers.length > 0 && (
             <ContainerTable containers={containers.data.containers} search={search} />

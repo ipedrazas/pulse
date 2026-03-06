@@ -6,10 +6,10 @@ use bollard::image::CreateImageOptions;
 use futures_util::StreamExt;
 use tracing::{error, info};
 
-use bollard::container::LogsOptions;
 use crate::proto::pulse::v1::{
     CommandResult, RequestLogs, RunContainer, ServerCommand, StopContainer, server_command,
 };
+use bollard::container::LogsOptions;
 
 pub struct Executor {
     docker: Docker,
