@@ -181,17 +181,17 @@ tasks:
   docker:api:
     desc: Build API Docker image
     cmds:
-      - docker build -f api/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_API}}:latest .
+      - docker build --platform linux/arm64,linux/amd64  -f api/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_API}}:latest . --push
 
   docker:agent:
     desc: Build Agent Docker image
     cmds:
-      - docker build -f agent/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_AGENT}}:latest .
+      - docker build --platform linux/arm64,linux/amd64 -f agent/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_AGENT}}:latest .
 
   docker:ui:
     desc: Build UI Docker image
     cmds:
-      - docker build -f ui/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_UI}}:latest .
+      - docker build --platform linux/arm64,linux/amd64 -f ui/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_UI}}:latest . --push
 
   docker:build:
     desc: Build all Docker images
@@ -211,7 +211,7 @@ tasks:
   up:
     desc: Start local dev stack (DB + API)
     cmds:
-      - docker compose up -d
+      - docker compose up -d --build
 
   down:
     desc: Stop local dev stack

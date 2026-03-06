@@ -12,6 +12,7 @@ import (
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -33,6 +34,12 @@ func NewAgentService(repo repository.Repository, notifier *alerts.Notifier) *Age
 
 // StreamLink handles the long-lived bidirectional stream from an agent.
 func (s *AgentService) StreamLink(stream pulsev1.AgentService_StreamLinkServer) error {
+	// Send response headers immediately so tonic (Rust) clients don't block
+	// waiting for headers before they can start sending messages.
+	if err := stream.SendHeader(metadata.MD{}); err != nil {
+		return status.Errorf(codes.Internal, "send header: %v", err)
+	}
+
 	ctx := stream.Context()
 	var nodeName string
 	firstHeartbeat := true

@@ -14,7 +14,7 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
       </Section>
 
       <Section title="Environment Variables">
-        {Object.keys(container.env_vars).length === 0 ? (
+        {!container.env_vars || Object.keys(container.env_vars).length === 0 ? (
           <p className="text-sm text-gray-500">None</p>
         ) : (
           Object.entries(container.env_vars).map(([k, v]) => (
@@ -24,7 +24,7 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
       </Section>
 
       <Section title="Ports">
-        {container.ports.length === 0 ? (
+        {!container.ports || container.ports.length === 0 ? (
           <p className="text-sm text-gray-500">None</p>
         ) : (
           container.ports.map((p, i) => (
@@ -39,7 +39,7 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
       </Section>
 
       <Section title="Mounts">
-        {container.mounts.length === 0 ? (
+        {!container.mounts || container.mounts.length === 0 ? (
           <p className="text-sm text-gray-500">None</p>
         ) : (
           container.mounts.map((m, i) => (
@@ -51,7 +51,7 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
       </Section>
 
       <Section title="Labels">
-        {Object.keys(container.labels).length === 0 ? (
+        {!container.labels || Object.keys(container.labels).length === 0 ? (
           <p className="text-sm text-gray-500">None</p>
         ) : (
           Object.entries(container.labels).map(([k, v]) => <KV key={k} label={k} value={v} mono />)
