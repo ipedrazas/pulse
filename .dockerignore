@@ -1,0 +1,10 @@
+**/.git
+**/.task
+**/.claude
+**/target
+**/node_modules
+**/dist
+**/bin
+**/*.test
+**/*.out
+.env

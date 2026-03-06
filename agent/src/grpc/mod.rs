@@ -33,13 +33,7 @@ pub async fn connect_with_backoff(addr: &str) -> AgentServiceClient<Channel> {
 /// Establishes the bidirectional stream and returns channels for sending/receiving.
 pub async fn establish_stream(
     client: &mut AgentServiceClient<Channel>,
-) -> Result<
-    (
-        mpsc::Sender<AgentMessage>,
-        tonic::Streaming<ServerCommand>,
-    ),
-    tonic::Status,
-> {
+) -> Result<(mpsc::Sender<AgentMessage>, tonic::Streaming<ServerCommand>), tonic::Status> {
     let (tx, rx) = mpsc::channel::<AgentMessage>(64);
     let stream = ReceiverStream::new(rx);
 

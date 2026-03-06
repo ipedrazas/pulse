@@ -30,5 +30,28 @@ services:
       db:
         condition: service_healthy
 
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    environment:
+      PULSE_API_ADDR: http://api:9090
+      PULSE_NODE_NAME: agent-1
+      PULSE_POLL_INTERVAL: 30s
+      PULSE_REDACT_PATTERNS: PASSWORD,SECRET,KEY,TOKEN,CREDENTIAL
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - api
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
 volumes:
   pgdata:

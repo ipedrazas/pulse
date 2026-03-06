@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
-	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
+	"github.com/ipedrazas/pulse/api/internal/alerts"
 	"github.com/ipedrazas/pulse/api/internal/repository"
+	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -16,14 +17,16 @@ import (
 // AgentService implements the bidirectional streaming AgentService.
 type AgentService struct {
 	pulsev1.UnimplementedAgentServiceServer
-	repo    repository.Repository
-	streams *StreamRegistry
+	repo     repository.Repository
+	streams  *StreamRegistry
+	notifier *alerts.Notifier
 }
 
-func NewAgentService(repo repository.Repository) *AgentService {
+func NewAgentService(repo repository.Repository, notifier *alerts.Notifier) *AgentService {
 	return &AgentService{
-		repo:    repo,
-		streams: NewStreamRegistry(),
+		repo:     repo,
+		streams:  NewStreamRegistry(),
+		notifier: notifier,
 	}
 }
 
@@ -31,6 +34,7 @@ func NewAgentService(repo repository.Repository) *AgentService {
 func (s *AgentService) StreamLink(stream pulsev1.AgentService_StreamLinkServer) error {
 	ctx := stream.Context()
 	var nodeName string
+	firstHeartbeat := true
 
 	for {
 		select {
@@ -39,6 +43,7 @@ func (s *AgentService) StreamLink(stream pulsev1.AgentService_StreamLinkServer) 
 				slog.Info("agent disconnected", "node", nodeName)
 				_ = s.repo.SetAgentStatus(ctx, nodeName, "offline")
 				s.streams.Remove(nodeName)
+				s.notifier.AgentOffline(nodeName)
 			}
 			return ctx.Err()
 		default:
@@ -53,6 +58,7 @@ func (s *AgentService) StreamLink(stream pulsev1.AgentService_StreamLinkServer) 
 				slog.Warn("stream error", "node", nodeName, "error", err)
 				_ = s.repo.SetAgentStatus(ctx, nodeName, "offline")
 				s.streams.Remove(nodeName)
+				s.notifier.AgentOffline(nodeName)
 			}
 			return status.Errorf(codes.Internal, "recv: %v", err)
 		}
@@ -71,6 +77,11 @@ func (s *AgentService) StreamLink(stream pulsev1.AgentService_StreamLinkServer) 
 				slog.Error("upsert agent failed", "node", nodeName, "error", err)
 			}
 			s.streams.Set(nodeName, stream)
+			if firstHeartbeat {
+				firstHeartbeat = false
+				slog.Info("agent connected", "node", nodeName)
+				s.notifier.AgentOnline(nodeName)
+			}
 
 			// Send any pending commands
 			cmds, err := s.repo.GetPendingCommands(ctx, nodeName)

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use bollard::container::ListContainersOptions;
 use bollard::Docker;
+use bollard::container::ListContainersOptions;
 use sha2::{Digest, Sha256};
 use tracing::{error, warn};
 
@@ -16,7 +16,10 @@ pub struct DockerPoller {
 }
 
 impl DockerPoller {
-    pub fn new(node_name: String, redact_patterns: Vec<String>) -> Result<Self, bollard::errors::Error> {
+    pub fn new(
+        node_name: String,
+        redact_patterns: Vec<String>,
+    ) -> Result<Self, bollard::errors::Error> {
         let client = Docker::connect_with_local_defaults()?;
         Ok(Self {
             client,
@@ -41,24 +44,6 @@ impl DockerPoller {
             return None; // no changes
         }
         self.last_hash = hash;
-
-        Some(ContainerReport {
-            node_name: self.node_name.clone(),
-            containers,
-        })
-    }
-
-    /// Always returns a report regardless of changes (for periodic full sync).
-    pub async fn poll_full(&mut self) -> Option<ContainerReport> {
-        let containers = match self.list_containers().await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("failed to list containers: {}", e);
-                return None;
-            }
-        };
-
-        self.last_hash = self.compute_hash(&containers);
 
         Some(ContainerReport {
             node_name: self.node_name.clone(),
@@ -96,15 +81,15 @@ impl DockerPoller {
             // Redact env vars — we need to inspect for full env
             let env_vars = match self.client.inspect_container(&id, None).await {
                 Ok(inspect) => {
-                    let env_list = inspect
-                        .config
-                        .and_then(|cfg| cfg.env)
-                        .unwrap_or_default();
+                    let env_list = inspect.config.and_then(|cfg| cfg.env).unwrap_or_default();
                     let env_map: HashMap<String, String> = env_list
                         .iter()
                         .filter_map(|e| {
                             let mut parts = e.splitn(2, '=');
-                            Some((parts.next()?.to_string(), parts.next().unwrap_or("").to_string()))
+                            Some((
+                                parts.next()?.to_string(),
+                                parts.next().unwrap_or("").to_string(),
+                            ))
                         })
                         .collect();
                     redact::redact_env_vars(&env_map, &self.redact_patterns)
@@ -138,7 +123,11 @@ impl DockerPoller {
                     host_ip: p.ip.clone().unwrap_or_default(),
                     host_port: p.public_port.unwrap_or(0) as u32,
                     container_port: p.private_port as u32,
-                    protocol: p.typ.as_ref().map(|t| format!("{:?}", t).to_lowercase()).unwrap_or_default(),
+                    protocol: p
+                        .typ
+                        .as_ref()
+                        .map(|t| format!("{:?}", t).to_lowercase())
+                        .unwrap_or_default(),
                 })
                 .collect();
 

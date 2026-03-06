@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
+use bollard::Docker;
 use bollard::container::{Config, CreateContainerOptions, StopContainerOptions};
 use bollard::image::CreateImageOptions;
-use bollard::Docker;
 use futures_util::StreamExt;
 use tracing::{error, info};
 
 use crate::proto::pulse::v1::{
-    server_command, CommandResult, RunContainer, ServerCommand, StopContainer,
+    CommandResult, RunContainer, ServerCommand, StopContainer, server_command,
 };
 
 pub struct Executor {
@@ -58,12 +58,24 @@ impl Executor {
         let mut exposed_ports = HashMap::new();
         let mut port_bindings = HashMap::new();
         for p in &rc.ports {
-            let container_port = format!("{}/{}", p.container_port, if p.protocol.is_empty() { "tcp" } else { &p.protocol });
+            let container_port = format!(
+                "{}/{}",
+                p.container_port,
+                if p.protocol.is_empty() {
+                    "tcp"
+                } else {
+                    &p.protocol
+                }
+            );
             exposed_ports.insert(container_port.clone(), HashMap::new());
             port_bindings.insert(
                 container_port,
                 Some(vec![bollard::models::PortBinding {
-                    host_ip: Some(if p.host_ip.is_empty() { "0.0.0.0".to_string() } else { p.host_ip.clone() }),
+                    host_ip: Some(if p.host_ip.is_empty() {
+                        "0.0.0.0".to_string()
+                    } else {
+                        p.host_ip.clone()
+                    }),
                     host_port: Some(p.host_port.to_string()),
                 }]),
             );
@@ -79,28 +91,37 @@ impl Executor {
         let config = Config {
             image: Some(rc.image.clone()),
             env: Some(env),
-            cmd: if rc.command.is_empty() { None } else { Some(rc.command.clone()) },
+            cmd: if rc.command.is_empty() {
+                None
+            } else {
+                Some(rc.command.clone())
+            },
             exposed_ports: Some(exposed_ports),
             host_config: Some(host_config),
             ..Default::default()
         };
 
-        let name = if rc.name.is_empty() { None } else { Some(rc.name.clone()) };
-        let options = name.map(|n| CreateContainerOptions { name: n, platform: None });
+        let name = if rc.name.is_empty() {
+            None
+        } else {
+            Some(rc.name.clone())
+        };
+        let options = name.map(|n| CreateContainerOptions {
+            name: n,
+            platform: None,
+        });
 
         match self.docker.create_container(options, config).await {
-            Ok(resp) => {
-                match self.docker.start_container::<String>(&resp.id, None).await {
-                    Ok(_) => {
-                        info!("started container {}", resp.id);
-                        (true, resp.id, String::new())
-                    }
-                    Err(e) => {
-                        error!("failed to start container: {}", e);
-                        (false, String::new(), e.to_string())
-                    }
+            Ok(resp) => match self.docker.start_container::<String>(&resp.id, None).await {
+                Ok(_) => {
+                    info!("started container {}", resp.id);
+                    (true, resp.id, String::new())
                 }
-            }
+                Err(e) => {
+                    error!("failed to start container: {}", e);
+                    (false, String::new(), e.to_string())
+                }
+            },
             Err(e) => {
                 error!("failed to create container: {}", e);
                 (false, String::new(), e.to_string())
@@ -116,7 +137,11 @@ impl Executor {
         };
 
         let options = StopContainerOptions { t: timeout.into() };
-        match self.docker.stop_container(&sc.container_id, Some(options)).await {
+        match self
+            .docker
+            .stop_container(&sc.container_id, Some(options))
+            .await
+        {
             Ok(_) => {
                 info!("stopped container {}", sc.container_id);
                 (true, format!("stopped {}", sc.container_id), String::new())
@@ -153,10 +178,7 @@ impl Executor {
         (true, format!("pulled {}", image), String::new())
     }
 
-    async fn compose_up(
-        &self,
-        cu: &crate::proto::pulse::v1::ComposeUp,
-    ) -> (bool, String, String) {
+    async fn compose_up(&self, cu: &crate::proto::pulse::v1::ComposeUp) -> (bool, String, String) {
         let mut cmd = tokio::process::Command::new("docker");
         cmd.arg("compose");
 

@@ -12,7 +12,7 @@ mod executor;
 mod grpc;
 mod redact;
 
-use proto::pulse::v1::{agent_message, AgentMessage, Heartbeat};
+use proto::pulse::v1::{AgentMessage, Heartbeat, agent_message};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 

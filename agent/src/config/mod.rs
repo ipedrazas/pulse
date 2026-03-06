@@ -7,9 +7,9 @@ pub struct Config {
     pub node_name: String,
     pub poll_interval: Duration,
     pub redact_patterns: Vec<String>,
-    pub tls_cert: Option<String>,
-    pub tls_key: Option<String>,
-    pub tls_ca: Option<String>,
+    pub _tls_cert: Option<String>,
+    pub _tls_key: Option<String>,
+    pub _tls_ca: Option<String>,
 }
 
 impl Config {
@@ -27,13 +27,14 @@ impl Config {
             .collect();
 
         Self {
-            api_addr: env::var("PULSE_API_ADDR").unwrap_or_else(|_| "http://localhost:9090".to_string()),
+            api_addr: env::var("PULSE_API_ADDR")
+                .unwrap_or_else(|_| "http://localhost:9090".to_string()),
             node_name: env::var("PULSE_NODE_NAME").unwrap_or_else(|_| hostname()),
             poll_interval: Duration::from_secs(poll_secs),
             redact_patterns,
-            tls_cert: env::var("PULSE_TLS_CERT").ok(),
-            tls_key: env::var("PULSE_TLS_KEY").ok(),
-            tls_ca: env::var("PULSE_TLS_CA").ok(),
+            _tls_cert: env::var("PULSE_TLS_CERT").ok(),
+            _tls_key: env::var("PULSE_TLS_KEY").ok(),
+            _tls_ca: env::var("PULSE_TLS_CA").ok(),
         }
     }
 }

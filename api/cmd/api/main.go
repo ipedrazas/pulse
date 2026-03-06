@@ -9,12 +9,13 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ipedrazas/pulse/api/internal/alerts"
 	"github.com/ipedrazas/pulse/api/internal/config"
 	"github.com/ipedrazas/pulse/api/internal/db"
-	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"github.com/ipedrazas/pulse/api/internal/grpcserver"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	"github.com/ipedrazas/pulse/api/internal/rest"
+	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -43,8 +44,11 @@ func main() {
 
 	repo := repository.NewPostgresRepository(pool)
 
+	// Alerts
+	notifier := alerts.NewNotifier(cfg.WebhookURL)
+
 	// gRPC server
-	agentSvc := grpcserver.NewAgentService(repo)
+	agentSvc := grpcserver.NewAgentService(repo, notifier)
 	cliSvc := grpcserver.NewCLIService(repo, agentSvc)
 
 	grpcSrv := grpc.NewServer()
@@ -68,6 +72,8 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(rest.CORSMiddleware())
+	router.Use(rest.LoggingMiddleware())
 
 	handler := rest.NewHandler(repo)
 	handler.Register(router)

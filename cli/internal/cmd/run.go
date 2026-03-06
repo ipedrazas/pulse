@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	grpcclient "github.com/ipedrazas/pulse/cli/internal/grpc"
+	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"github.com/spf13/cobra"
 )
 

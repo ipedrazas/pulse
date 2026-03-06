@@ -137,6 +137,36 @@ tasks:
     cmds:
       - npm test
 
+  # --- Docker Images ---
+  docker:api:
+    desc: Build API Docker image
+    cmds:
+      - docker build -f api/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_API}}:latest .
+
+  docker:agent:
+    desc: Build Agent Docker image
+    cmds:
+      - docker build -f agent/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_AGENT}}:latest .
+
+  docker:ui:
+    desc: Build UI Docker image
+    cmds:
+      - docker build -f ui/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_UI}}:latest .
+
+  docker:build:
+    desc: Build all Docker images
+    cmds:
+      - task: docker:api
+      - task: docker:agent
+      - task: docker:ui
+
+  docker:push:
+    desc: Push all Docker images
+    cmds:
+      - docker push {{.REGISTRY}}/{{.IMAGE_API}}:latest
+      - docker push {{.REGISTRY}}/{{.IMAGE_AGENT}}:latest
+      - docker push {{.REGISTRY}}/{{.IMAGE_UI}}:latest
+
   # --- Compose ---
   up:
     desc: Start local dev stack (DB + API)
