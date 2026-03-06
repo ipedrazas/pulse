@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS commands;
+DROP TABLE IF EXISTS container_events;
+DROP TABLE IF EXISTS containers;
+DROP TABLE IF EXISTS agents;

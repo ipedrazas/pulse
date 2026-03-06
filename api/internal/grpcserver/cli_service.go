@@ -1,0 +1,223 @@
+package grpcserver
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"strconv"
+	"time"
+
+	"github.com/google/uuid"
+	pulsev1 "github.com/ipedrazas/pulse/api/internal/gen/pulse/v1"
+	"github.com/ipedrazas/pulse/api/internal/repository"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// CLIService implements unary RPCs used by the CLI and UI.
+type CLIService struct {
+	pulsev1.UnimplementedCLIServiceServer
+	repo         repository.Repository
+	agentService *AgentService
+}
+
+func NewCLIService(repo repository.Repository, agentSvc *AgentService) *CLIService {
+	return &CLIService{
+		repo:         repo,
+		agentService: agentSvc,
+	}
+}
+
+func (s *CLIService) ListNodes(ctx context.Context, _ *pulsev1.ListNodesRequest) (*pulsev1.ListNodesResponse, error) {
+	agents, err := s.repo.ListAgents(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list agents: %v", err)
+	}
+
+	var nodes []*pulsev1.NodeInfo
+	for _, a := range agents {
+		// Get container count for this agent
+		_, count, err := s.repo.ListContainers(ctx, a.Name, 0, 0)
+		if err != nil {
+			slog.Error("count containers failed", "node", a.Name, "error", err)
+		}
+		node := &pulsev1.NodeInfo{
+			Name:           a.Name,
+			Status:         a.Status,
+			AgentVersion:   a.Version,
+			ContainerCount: int32(count),
+		}
+		if a.LastSeen != nil {
+			node.LastSeen = timestamppb.New(*a.LastSeen)
+		}
+		nodes = append(nodes, node)
+	}
+	return &pulsev1.ListNodesResponse{Nodes: nodes}, nil
+}
+
+func (s *CLIService) GetNode(ctx context.Context, req *pulsev1.GetNodeRequest) (*pulsev1.GetNodeResponse, error) {
+	agent, err := s.repo.GetAgent(ctx, req.Name)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get agent: %v", err)
+	}
+	if agent == nil {
+		return nil, status.Errorf(codes.NotFound, "agent %q not found", req.Name)
+	}
+
+	containers, _, err := s.repo.ListContainers(ctx, req.Name, 100, 0)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list containers: %v", err)
+	}
+
+	node := &pulsev1.NodeInfo{
+		Name:           agent.Name,
+		Status:         agent.Status,
+		AgentVersion:   agent.Version,
+		ContainerCount: int32(len(containers)),
+	}
+	if agent.LastSeen != nil {
+		node.LastSeen = timestamppb.New(*agent.LastSeen)
+	}
+
+	var protoContainers []*pulsev1.ContainerInfo
+	for _, c := range containers {
+		protoContainers = append(protoContainers, containerToProto(c))
+	}
+
+	return &pulsev1.GetNodeResponse{
+		Node:       node,
+		Containers: protoContainers,
+	}, nil
+}
+
+func (s *CLIService) ListContainers(ctx context.Context, req *pulsev1.ListContainersRequest) (*pulsev1.ListContainersResponse, error) {
+	pageSize := int(req.PageSize)
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	offset := 0
+	if req.PageToken != "" {
+		if v, err := strconv.Atoi(req.PageToken); err == nil {
+			offset = v
+		}
+	}
+
+	containers, total, err := s.repo.ListContainers(ctx, req.NodeName, pageSize, offset)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list containers: %v", err)
+	}
+
+	var protoContainers []*pulsev1.ContainerInfo
+	for _, c := range containers {
+		protoContainers = append(protoContainers, containerToProto(c))
+	}
+
+	var nextToken string
+	if offset+pageSize < total {
+		nextToken = strconv.Itoa(offset + pageSize)
+	}
+
+	return &pulsev1.ListContainersResponse{
+		Containers:    protoContainers,
+		NextPageToken: nextToken,
+	}, nil
+}
+
+func (s *CLIService) GetContainer(ctx context.Context, req *pulsev1.GetContainerRequest) (*pulsev1.GetContainerResponse, error) {
+	c, err := s.repo.GetContainer(ctx, req.ContainerId, "")
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get container: %v", err)
+	}
+	if c == nil {
+		return nil, status.Errorf(codes.NotFound, "container %q not found", req.ContainerId)
+	}
+	return &pulsev1.GetContainerResponse{Container: containerToProto(*c)}, nil
+}
+
+func (s *CLIService) SendCommand(ctx context.Context, req *pulsev1.SendCommandRequest) (*pulsev1.SendCommandResponse, error) {
+	if req.NodeName == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "node_name is required")
+	}
+
+	cmdID := uuid.New().String()
+	cmdType, payload, err := marshalCommand(req)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "marshal command: %v", err)
+	}
+
+	cmd := repository.Command{
+		ID:        cmdID,
+		AgentName: req.NodeName,
+		Type:      cmdType,
+		Payload:   payload,
+		Status:    "pending",
+		CreatedAt: time.Now(),
+	}
+	if err := s.repo.CreateCommand(ctx, cmd); err != nil {
+		return nil, status.Errorf(codes.Internal, "create command: %v", err)
+	}
+
+	// Try to send immediately if agent is connected
+	serverCmd, err := commandToProto(cmd)
+	if err == nil {
+		if sendErr := s.agentService.SendToAgent(req.NodeName, serverCmd); sendErr != nil {
+			slog.Info("agent not connected, command queued", "node", req.NodeName, "id", cmdID)
+		}
+	}
+
+	return &pulsev1.SendCommandResponse{
+		CommandId: cmdID,
+		Accepted:  true,
+	}, nil
+}
+
+func marshalCommand(req *pulsev1.SendCommandRequest) (string, []byte, error) {
+	switch cmd := req.Command.(type) {
+	case *pulsev1.SendCommandRequest_RunContainer:
+		data, err := json.Marshal(cmd.RunContainer)
+		return "run_container", data, err
+	case *pulsev1.SendCommandRequest_StopContainer:
+		data, err := json.Marshal(cmd.StopContainer)
+		return "stop_container", data, err
+	case *pulsev1.SendCommandRequest_PullImage:
+		data, err := json.Marshal(cmd.PullImage)
+		return "pull_image", data, err
+	case *pulsev1.SendCommandRequest_ComposeUp:
+		data, err := json.Marshal(cmd.ComposeUp)
+		return "compose_up", data, err
+	case *pulsev1.SendCommandRequest_SendFile:
+		data, err := json.Marshal(cmd.SendFile)
+		return "send_file", data, err
+	case *pulsev1.SendCommandRequest_RequestLogs:
+		data, err := json.Marshal(cmd.RequestLogs)
+		return "request_logs", data, err
+	default:
+		return "", nil, status.Errorf(codes.InvalidArgument, "unknown command type")
+	}
+}
+
+func containerToProto(c repository.Container) *pulsev1.ContainerInfo {
+	var ports []*pulsev1.PortMapping
+	for _, p := range c.Ports {
+		ports = append(ports, &pulsev1.PortMapping{
+			HostIp:        p.HostIP,
+			HostPort:      p.HostPort,
+			ContainerPort: p.ContainerPort,
+			Protocol:      p.Protocol,
+		})
+	}
+	return &pulsev1.ContainerInfo{
+		Id:             c.ContainerID,
+		Name:           c.Name,
+		Image:          c.Image,
+		Status:         c.Status,
+		EnvVars:        c.EnvVars,
+		Mounts:         c.Mounts,
+		Labels:         c.Labels,
+		Ports:          ports,
+		UptimeSeconds:  c.UptimeSeconds,
+		ComposeProject: c.ComposeProject,
+		Command:        c.Command,
+	}
+}

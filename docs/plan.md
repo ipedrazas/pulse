@@ -56,7 +56,7 @@ Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`,
 > Goal: Repository structure, tooling, and build pipeline.
 
 - [x] Fix `.a2.yaml` typo (`source_dit` → `source_dir`)
-- [ ] Create directory structure:
+- [x] Create directory structure:
   ```
   proto/          — Protobuf definitions
   api/            — Go API (control plane)
@@ -65,21 +65,21 @@ Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`,
   ui/             — React UI
   docs/           — Documentation (exists)
   ```
-- [ ] Initialize Go modules (`api/go.mod`, `cli/go.mod`)
-- [ ] Initialize Rust project (`cargo init` in `agent/`)
-- [ ] Initialize React project (Vite + Tailwind in `ui/`)
-- [ ] Set up `buf.yaml` / `buf.gen.yaml` for proto generation
-- [ ] Update `Taskfile.yaml` with build/test/lint tasks
-- [ ] Create `compose.yml` for local dev (TimescaleDB + API)
-- [ ] Create `.env.example` with required env vars
-- [ ] Add `CLAUDE.md` with project conventions
+- [x] Initialize Go modules (`api/go.mod`, `cli/go.mod`)
+- [x] Initialize Rust project (`cargo init` in `agent/`)
+- [x] Initialize React project (Vite + Tailwind in `ui/`)
+- [x] Set up `buf.yaml` / `buf.gen.yaml` for proto generation
+- [x] Update `Taskfile.yaml` with build/test/lint tasks
+- [x] Create `compose.yml` for local dev (TimescaleDB + API)
+- [x] Create `.env.example` with required env vars
+- [x] Add `CLAUDE.md` with project conventions
 
 ---
 
 ## Phase 1: Protobuf & gRPC Contract
 > Goal: Define the communication contract between all components.
 
-- [ ] Write `proto/dco/v1/dco.proto`:
+- [x] Write `proto/dco/v1/dco.proto`:
   - `service AgentService` with `rpc Connect(stream AgentMessage) returns (stream ServerCommand)`
   - `AgentMessage`: oneof { Heartbeat, ContainerReport, CommandResult, LogLine, FileAck }
   - `ServerCommand`: oneof { RunContainer, StopContainer, PullImage, ComposeUp, SendFile, RequestLogs }
@@ -87,13 +87,13 @@ Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`,
   - `ContainerReport`: list of ContainerInfo (id, name, image, status, env_vars, mounts, labels, ports, uptime)
   - `RunContainer`: image, name, env, ports, volumes
   - `StopContainer`: container_id
-- [ ] Define `service CLIService` (or reuse AgentService) for CLI→API commands:
+- [x] Define `service CLIService` (or reuse AgentService) for CLI→API commands:
   - `rpc ListContainers(ListRequest) returns (ContainerList)`
   - `rpc ListNodes(Empty) returns (NodeList)`
   - `rpc SendCommand(CommandRequest) returns (CommandResponse)`
-- [ ] Generate Go code (`buf generate`)
-- [ ] Generate Rust code (via `tonic-build` in `agent/build.rs`)
-- [ ] Verify generated code compiles in both Go and Rust
+- [x] Generate Go code (`buf generate`)
+- [x] Generate Rust code (via `tonic-build` in `agent/build.rs`)
+- [x] Verify generated code compiles in both Go and Rust
 
 ---
 
@@ -101,22 +101,22 @@ Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`,
 > Goal: API server boots, connects to TimescaleDB, serves REST + gRPC.
 
 ### Database
-- [ ] Design schema:
+- [x] Design schema:
   - `agents` table: name (PK), status, version, last_seen, capabilities, created_at
   - `containers` table: container_id, agent_name, name, image, status, env_vars (JSONB), mounts (JSONB), labels (JSONB), ports (JSONB), compose_project, command, created_at, removed_at
   - `container_events` hypertable: time, container_id, agent_name, status, uptime_seconds
   - `commands` table: id, agent_name, type, payload (JSONB), status, result, created_at, completed_at, ttl
-- [ ] Write SQL migrations (golang-migrate format)
-- [ ] Write migration runner
+- [x] Write SQL migrations (golang-migrate format)
+- [x] Write migration runner
 
 ### API gRPC Server
-- [ ] Implement `AgentService.Connect` bidirectional stream handler:
+- [x] Implement `AgentService.Connect` bidirectional stream handler:
   - Accept agent connection, register/update agent in DB
   - Receive `Heartbeat` → update agent `last_seen`
   - Receive `ContainerReport` → upsert containers + insert events into hypertable
   - Send pending `ServerCommand`s from the commands table
   - On stream close → mark agent offline
-- [ ] Implement `CLIService` RPCs
+- [x] Implement `CLIService` RPCs
 
 ### API REST Server (Gin)
 - [ ] `GET /healthz` — health check
