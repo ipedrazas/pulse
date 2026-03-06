@@ -9,38 +9,53 @@ This plan tracks the build-out of Pulse based on [spec.md](./spec.md). Each phas
 Before diving into phases, these are gaps or ambiguities in the spec that should be resolved:
 
 ### 1. File Transfer (`pulse send --file`)
-The spec lists the command but doesn't describe the mechanism. **Recommendation:** Add a `SendFile` message to the gRPC stream with chunked binary transfer (e.g. 64KB chunks). The proto needs a `FileChunk` message type.
+Add a `SendFile` message to the gRPC stream with chunked binary transfer (e.g. 64KB chunks). The proto needs a `FileChunk` message type.
 
 ### 2. Log Streaming (`pulse logs`)
-Container log streaming requires its own mechanism. **Recommendation:** Add a `LogStream` server command that triggers the agent to start sending log lines back through the bidirectional stream, or use a dedicated server-streaming RPC.
+Add a `LogStream` server command that triggers the agent to start sending log lines back through the bidirectional stream, or use a dedicated server-streaming RPC.
 
 ### 3. Docker Compose Support (`pulse up -d`, `pulse pull`)
-The spec assumes compose files exist on the agent but doesn't describe how they get there. **Recommendation:** Either (a) compose files are pre-deployed on agents, or (b) `pulse send` is used to transfer them first, or (c) `pulse up` accepts a compose file and transfers it inline. Clarify this flow.
+The agent needs a config defined workdir. The compose file would be in there or it would be added via `pulse send`, the only exception is when doing `pulse up -f oci://...` as described in the docs (https://docs.docker.com/compose/how-tos/oci-artifact/)
 
 ### 4. Agent Permission Model
-"Each agent defines which actions are allowed" — no schema or enforcement mechanism described. **Recommendation:** Define a policy config file on the agent (TOML/YAML) listing allowed actions per caller. The agent checks this before executing commands.
+A policy config file on the agent (YAML) listing allowed actions per caller. The agent checks this before executing commands.
+
+```
+
+deny:
+  - nodes:*
+
+users:
+  - ivan:
+      read:
+        - /etc/hosts
+      write:
+        - /home/ivan
+      exec:
+        - docker:*
+        - tail
+        - ping 
+```
 
 ### 5. Authentication & TLS
-No mention of how gRPC connections are secured. The previous codebase had TLS + token auth. **Recommendation:** Keep mTLS for agent↔API and a shared token for CLI↔API. Document cert provisioning.
+Keep mTLS for agent↔API and a shared token for CLI↔API. Document cert provisioning.
 
 ### 6. Agent Registration
-How does a new agent join the cluster? **Recommendation:** First connection auto-registers the agent in the `agents` table. The agent sends its node name + capabilities in the initial handshake message.
+First connection auto-registers the agent in the `agents` table. The agent sends its node name + capabilities in the initial handshake message.
+Agent has a config entry (or a flag) with the api endpoint.
 
 ### 7. Reconnection Semantics
-The spec mentions "backoff strategy" for the agent but doesn't cover API-side handling (e.g., what happens to in-flight commands when an agent disconnects). **Recommendation:** Commands pending during disconnect are kept in the DB and retried on reconnect, with a configurable TTL.
+Commands pending during disconnect are kept in the DB and retried on reconnect, with a configurable TTL.
 
 ### 8. Configuration Management
-No mention of how agents discover the API address. **Recommendation:** Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`, `PULSE_TLS_CERT`, etc.).
-
-### 9. Typo in `.a2.yaml`
-`source_dit` should be `source_dir` for the Rust section.
+Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`, `PULSE_TLS_CERT`, etc.).
 
 ---
 
 ## Phase 0: Project Scaffolding
 > Goal: Repository structure, tooling, and build pipeline.
 
-- [ ] Fix `.a2.yaml` typo (`source_dit` → `source_dir`)
+- [x] Fix `.a2.yaml` typo (`source_dit` → `source_dir`)
 - [ ] Create directory structure:
   ```
   proto/          — Protobuf definitions

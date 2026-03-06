@@ -1,12 +1,11 @@
 version: "3"
 
 vars:
-  AGENT_BIN: agent/bin/pulse-agent
   API_BIN: api/bin/pulse-api
   CLI_BIN: cli/bin/pulse
   REGISTRY: git.andcake.dev/ivan
-  IMAGE_AGENT: pulse-agent
   IMAGE_API: pulse-api
+  IMAGE_AGENT: pulse-agent
   IMAGE_UI: pulse-ui
 
 tasks:
@@ -15,8 +14,172 @@ tasks:
     cmds:
       - task --list
 
+  # --- Proto ---
+  proto:
+    desc: Generate protobuf code
+    cmds:
+      - buf generate
+    sources:
+      - proto/**/*.proto
+
+  proto:lint:
+    desc: Lint protobuf definitions
+    cmds:
+      - buf lint
+
+  # --- API (Go) ---
+  api:build:
+    desc: Build the API server
+    dir: api
+    cmds:
+      - go build -o bin/pulse-api ./cmd/api
+    sources:
+      - "**/*.go"
+
+  api:test:
+    desc: Run API tests
+    dir: api
+    cmds:
+      - go test ./... -v -count=1
+
+  api:lint:
+    desc: Lint API code
+    dir: api
+    cmds:
+      - golangci-lint run ./...
+
+  api:run:
+    desc: Run the API server locally
+    dir: api
+    cmds:
+      - go run ./cmd/api
+
+  # --- CLI (Go) ---
+  cli:build:
+    desc: Build the CLI
+    dir: cli
+    cmds:
+      - go build -o bin/pulse ./cmd/pulse
+    sources:
+      - "**/*.go"
+
+  cli:test:
+    desc: Run CLI tests
+    dir: cli
+    cmds:
+      - go test ./... -v -count=1
+
+  cli:lint:
+    desc: Lint CLI code
+    dir: cli
+    cmds:
+      - golangci-lint run ./...
+
+  # --- Agent (Rust) ---
+  agent:build:
+    desc: Build the Rust agent
+    dir: agent
+    cmds:
+      - cargo build
+
+  agent:test:
+    desc: Run agent tests
+    dir: agent
+    cmds:
+      - cargo test
+
+  agent:lint:
+    desc: Lint agent code
+    dir: agent
+    cmds:
+      - cargo clippy -- -D warnings
+
+  agent:fmt:
+    desc: Format agent code
+    dir: agent
+    cmds:
+      - cargo fmt
+
+  agent:run:
+    desc: Run the agent locally
+    dir: agent
+    cmds:
+      - cargo run
+
+  # --- UI (React) ---
+  ui:install:
+    desc: Install UI dependencies
+    dir: ui
+    cmds:
+      - npm install
+
+  ui:dev:
+    desc: Start UI dev server
+    dir: ui
+    cmds:
+      - npm run dev
+
+  ui:build:
+    desc: Build UI for production
+    dir: ui
+    cmds:
+      - npm run build
+
+  ui:lint:
+    desc: Lint UI code
+    dir: ui
+    cmds:
+      - npx biome check .
+
+  ui:test:
+    desc: Run UI tests
+    dir: ui
+    cmds:
+      - npm test
+
+  # --- Compose ---
+  up:
+    desc: Start local dev stack (DB + API)
+    cmds:
+      - docker compose up -d
+
+  down:
+    desc: Stop local dev stack
+    cmds:
+      - docker compose down
+
+  db:
+    desc: Start only the database
+    cmds:
+      - docker compose up -d db
+
+  # --- All ---
+  build:
+    desc: Build all components
+    cmds:
+      - task: api:build
+      - task: cli:build
+      - task: agent:build
+      - task: ui:build
+
+  test:
+    desc: Run all tests
+    cmds:
+      - task: api:test
+      - task: cli:test
+      - task: agent:test
+
+  lint:
+    desc: Lint all code
+    cmds:
+      - task: api:lint
+      - task: cli:lint
+      - task: agent:lint
+      - task: ui:lint
 
   clean:
     desc: Remove build artifacts
     cmds:
-      - rm -f {{.AGENT_BIN}} {{.API_BIN}} {{.CLI_BIN}}
+      - rm -f {{.API_BIN}} {{.CLI_BIN}}
+      - cd agent && cargo clean
+      - cd ui && rm -rf dist

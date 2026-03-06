@@ -33,6 +33,13 @@ go.work.sum
 # Generated protobuf files
 *.pb.go
 
+# Rust
+agent/target/
+
+# UI
+ui/node_modules/
+ui/dist/
+
 # Database data (local dev)
 data/
 
