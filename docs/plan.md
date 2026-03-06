@@ -119,23 +119,23 @@ Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`,
 - [x] Implement `CLIService` RPCs
 
 ### API REST Server (Gin)
-- [ ] `GET /healthz` — health check
-- [ ] `GET /api/v1/nodes` — list agents with status
-- [ ] `GET /api/v1/nodes/:name` — agent detail + containers
-- [ ] `GET /api/v1/containers` — all containers (with pagination)
-- [ ] `GET /api/v1/containers/:id` — container detail
-- [ ] `POST /api/v1/commands` — submit command (routed to agent via stream)
+- [x] `GET /healthz` — health check
+- [x] `GET /api/v1/nodes` — list agents with status
+- [x] `GET /api/v1/nodes/:name` — agent detail + containers
+- [x] `GET /api/v1/containers` — all containers (with pagination)
+- [x] `GET /api/v1/containers/:id` — container detail
+- [x] `POST /api/v1/commands` — submit command (routed to agent via stream)
 
 ### Repository Pattern
-- [ ] Define `Repository` interface
-- [ ] Implement `PostgresRepository`
-- [ ] Write tests using Testcontainers
+- [x] Define `Repository` interface
+- [x] Implement `PostgresRepository`
+- [x] Write tests using Testcontainers
 
 ### Infrastructure
-- [ ] Graceful shutdown handling
-- [ ] Structured logging (slog)
-- [ ] Configuration from env vars
-- [ ] Maintenance goroutine: sweep stale agents/containers
+- [x] Graceful shutdown handling
+- [x] Structured logging (slog)
+- [x] Configuration from env vars
+- [x] Maintenance goroutine: sweep stale agents/containers
 
 ---
 
@@ -143,33 +143,33 @@ Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`,
 > Goal: Agent connects to API, reports containers, executes commands.
 
 ### Connection & Streaming
-- [ ] gRPC client with `tonic` — connect to API, establish bidirectional stream
-- [ ] Reconnection logic with exponential backoff (0.5s → 30s cap)
-- [ ] TLS support (optional, via rustls)
+- [x] gRPC client with `tonic` — connect to API, establish bidirectional stream
+- [x] Reconnection logic with exponential backoff (0.5s → 30s cap)
+- [x] TLS support (optional, via rustls)
 
 ### Docker Integration
-- [ ] `bollard` client — connect to Docker socket
-- [ ] Poll running containers every N seconds (configurable, default 30s)
-- [ ] Build `ContainerReport` from Docker state
-- [ ] Debounce metadata: hash container state, only send full report on change
-- [ ] Send `Heartbeat` on every poll cycle
+- [x] `bollard` client — connect to Docker socket
+- [x] Poll running containers every N seconds (configurable, default 30s)
+- [x] Build `ContainerReport` from Docker state
+- [x] Debounce metadata: hash container state, only send full report on change
+- [x] Send `Heartbeat` on every poll cycle
 
 ### Command Execution
-- [ ] Listen for `ServerCommand` on the incoming stream
-- [ ] `RunContainer` → `docker run` via bollard
-- [ ] `StopContainer` → `docker stop` via bollard
-- [ ] `PullImage` → `docker pull` via bollard
-- [ ] `ComposeUp` → shell out to `docker compose up -d`
-- [ ] Report command result back through stream
+- [x] Listen for `ServerCommand` on the incoming stream
+- [x] `RunContainer` → `docker run` via bollard
+- [x] `StopContainer` → `docker stop` via bollard
+- [x] `PullImage` → `docker pull` via bollard
+- [x] `ComposeUp` → shell out to `docker compose up -d`
+- [x] Report command result back through stream
 
 ### Security
-- [ ] Env var redaction (`PULSE_REDACT_PATTERNS=PASSWORD,SECRET,KEY,TOKEN,CREDENTIAL`)
-- [ ] Permission policy: load allowed actions from config file
-- [ ] Drop privileges where possible
+- [x] Env var redaction (`PULSE_REDACT_PATTERNS=PASSWORD,SECRET,KEY,TOKEN,CREDENTIAL`)
+- [x] Permission policy: load allowed actions from config file
+- [x] Drop privileges where possible
 
 ### Packaging
-- [ ] Dockerfile (multi-stage build)
-- [ ] systemd unit file template
+- [x] Dockerfile (multi-stage build)
+- [x] systemd unit file template
 
 ---
 

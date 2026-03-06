@@ -1038,6 +1038,7 @@ name = "pulse-agent"
 version = "0.1.0"
 dependencies = [
  "bollard",
+ "futures-util",
  "hex",
  "prost",
  "prost-types",
@@ -1045,6 +1046,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-build",
  "tracing",
