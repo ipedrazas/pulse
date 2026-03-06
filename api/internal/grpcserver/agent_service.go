@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	pulsev1 "github.com/ipedrazas/pulse/api/internal/gen/pulse/v1"
+	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -1,15 +1,15 @@
 version: v2
 plugins:
   - remote: buf.build/protocolbuffers/go
-    out: api/internal/gen
+    out: proto/gen
     opt:
       - paths=source_relative
   - remote: buf.build/grpc/go
-    out: api/internal/gen
+    out: proto/gen
     opt:
       - paths=source_relative
 managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/ipedrazas/pulse/api/internal/gen
+      value: github.com/ipedrazas/pulse/proto/gen

@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ipedrazas/pulse/api/internal/config"
 	"github.com/ipedrazas/pulse/api/internal/db"
-	pulsev1 "github.com/ipedrazas/pulse/api/internal/gen/pulse/v1"
+	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"github.com/ipedrazas/pulse/api/internal/grpcserver"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	"github.com/ipedrazas/pulse/api/internal/rest"
