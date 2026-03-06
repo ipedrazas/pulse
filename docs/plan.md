@@ -176,45 +176,45 @@ Agent config via env vars or a config file (`PULSE_API_ADDR`, `PULSE_NODE_NAME`,
 ## Phase 4: Go CLI
 > Goal: CLI can manage the cluster via gRPC.
 
-- [ ] Set up Cobra root command with global flags (`--api-addr`, `--node`)
-- [ ] `pulse ps` — list all containers (table format)
-- [ ] `pulse ps --node <id>` — list containers on a specific node
-- [ ] `pulse run --image <name> --node <id>` — run a container
-- [ ] `pulse stop <container> --node <id>` — stop a container
-- [ ] `pulse pull --node <id>` — pull images
-- [ ] `pulse up -d --node <id>` — compose up
-- [ ] `pulse logs <container> --node <id>` — stream container logs
-- [ ] `pulse send --file <path> --node <id>` — send file to agent
-- [ ] `pulse nodes` — list agents and their status
-- [ ] Output formatting: table, JSON (`--output json`)
-- [ ] Error handling with user-friendly messages
+- [x] Set up Cobra root command with global flags (`--api-addr`, `--node`)
+- [x] `pulse ps` — list all containers (table format)
+- [x] `pulse ps --node <id>` — list containers on a specific node
+- [x] `pulse run --image <name> --node <id>` — run a container
+- [x] `pulse stop <container> --node <id>` — stop a container
+- [x] `pulse pull --node <id>` — pull images
+- [x] `pulse up -d --node <id>` — compose up
+- [x] `pulse logs <container> --node <id>` — stream container logs
+- [x] `pulse send --file <path> --node <id>` — send file to agent
+- [x] `pulse nodes` — list agents and their status
+- [x] Output formatting: table, JSON (`--output json`)
+- [x] Error handling with user-friendly messages
 
 ---
 
 ## Phase 5: React UI
 > Goal: Dashboard for monitoring agents and containers.
 
-- [ ] Project setup: Vite + React + TypeScript + Tailwind CSS
-- [ ] REST API client (fetch wrapper with error handling)
-- [ ] Layout: Header + main content area
-- [ ] Agent list view:
+- [x] Project setup: Vite + React + TypeScript + Tailwind CSS
+- [x] REST API client (fetch wrapper with error handling)
+- [x] Layout: Header + main content area
+- [x] Agent list view:
   - Cards/rows per agent
   - Online/Offline indicator (green/gray dot)
   - Last seen timestamp
   - Container count
-- [ ] Container table:
+- [x] Container table:
   - Sortable columns: name, image, status, agent, uptime
   - Status badge (running/stopped/exited with color)
   - Search/filter bar
-- [ ] Container detail view (click to expand):
+- [x] Container detail view (click to expand):
   - Environment variables (redacted values)
   - Mounts
   - Labels
   - Ports
   - Logs (stretch goal)
-- [ ] Auto-refresh with polling (configurable interval)
-- [ ] Empty states and loading spinners
-- [ ] Responsive layout
+- [x] Auto-refresh with polling (configurable interval)
+- [x] Empty states and loading spinners
+- [x] Responsive layout
 
 ---
 
