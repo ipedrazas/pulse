@@ -7,7 +7,8 @@ RUN go work init ./api ./proto && cd api && go mod download
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
     && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 COPY proto/ ./proto/
-RUN protoc --go_out=proto/gen --go_opt=paths=source_relative \
+RUN mkdir -p proto/gen/pulse/v1 \
+    && protoc --go_out=proto/gen --go_opt=paths=source_relative \
            --go-grpc_out=proto/gen --go-grpc_opt=paths=source_relative \
            -I proto proto/pulse/v1/pulse.proto
 COPY api/ ./api/
