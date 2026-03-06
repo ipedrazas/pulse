@@ -240,6 +240,12 @@ func commandToProto(cmd repository.Command) (*pulsev1.ServerCommand, error) {
 			return nil, err
 		}
 		sc.Payload = &pulsev1.ServerCommand_ComposeUp{ComposeUp: &cu}
+	case "request_logs":
+		var rl pulsev1.RequestLogs
+		if err := json.Unmarshal(cmd.Payload, &rl); err != nil {
+			return nil, err
+		}
+		sc.Payload = &pulsev1.ServerCommand_RequestLogs{RequestLogs: &rl}
 	}
 	return sc, nil
 }

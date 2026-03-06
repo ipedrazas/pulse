@@ -19,7 +19,7 @@ func newLogsCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "logs [container_id]",
-		Short: "Request container logs from a node",
+		Short: "Fetch container logs from a node",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if node == "" {
@@ -32,7 +32,7 @@ func newLogsCmd() *cobra.Command {
 			}
 			defer conn.Close()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
 			resp, err := client.SendCommand(ctx, &pulsev1.SendCommandRequest{
@@ -49,8 +49,31 @@ func newLogsCmd() *cobra.Command {
 				return fmt.Errorf("send command: %w", err)
 			}
 
-			fmt.Printf("Log request queued: %s\n", resp.CommandId)
-			return nil
+			// Poll for the result
+			ticker := time.NewTicker(500 * time.Millisecond)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("timed out waiting for logs (command %s)", resp.CommandId)
+				case <-ticker.C:
+					result, err := client.GetCommandResult(ctx, &pulsev1.GetCommandResultRequest{
+						CommandId: resp.CommandId,
+					})
+					if err != nil {
+						return fmt.Errorf("get result: %w", err)
+					}
+					switch result.Status {
+					case "completed":
+						fmt.Print(result.Result)
+						return nil
+					case "failed":
+						return fmt.Errorf("command failed: %s", result.Result)
+					}
+					// still pending, keep polling
+				}
+			}
 		},
 	}
 

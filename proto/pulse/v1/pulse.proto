@@ -148,6 +148,7 @@ service CLIService {
   rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
   rpc GetContainer(GetContainerRequest) returns (GetContainerResponse);
   rpc SendCommand(SendCommandRequest) returns (SendCommandResponse);
+  rpc GetCommandResult(GetCommandResultRequest) returns (GetCommandResultResponse);
 }
 
 // --- Nodes ---
@@ -215,4 +216,14 @@ message SendCommandResponse {
   string command_id = 1;
   bool accepted = 2;
   string error = 3;
+}
+
+message GetCommandResultRequest {
+  string command_id = 1;
+}
+
+message GetCommandResultResponse {
+  string command_id = 1;
+  string status = 2;         // pending, completed, failed
+  string result = 3;
 }

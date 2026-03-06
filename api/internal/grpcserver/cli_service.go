@@ -172,6 +172,21 @@ func (s *CLIService) SendCommand(ctx context.Context, req *pulsev1.SendCommandRe
 	}, nil
 }
 
+func (s *CLIService) GetCommandResult(ctx context.Context, req *pulsev1.GetCommandResultRequest) (*pulsev1.GetCommandResultResponse, error) {
+	cmd, err := s.repo.GetCommand(ctx, req.CommandId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get command: %v", err)
+	}
+	if cmd == nil {
+		return nil, status.Errorf(codes.NotFound, "command %q not found", req.CommandId)
+	}
+	return &pulsev1.GetCommandResultResponse{
+		CommandId: cmd.ID,
+		Status:    cmd.Status,
+		Result:    cmd.Result,
+	}, nil
+}
+
 func marshalCommand(req *pulsev1.SendCommandRequest) (string, []byte, error) {
 	switch cmd := req.Command.(type) {
 	case *pulsev1.SendCommandRequest_RunContainer:

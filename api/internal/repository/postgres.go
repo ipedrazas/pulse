@@ -211,6 +211,21 @@ func (r *PostgresRepository) CreateCommand(ctx context.Context, cmd Command) err
 	return err
 }
 
+func (r *PostgresRepository) GetCommand(ctx context.Context, id string) (*Command, error) {
+	var c Command
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, agent_name, type, payload, status, result, created_at, completed_at
+		FROM commands WHERE id = $1`, id).
+		Scan(&c.ID, &c.AgentName, &c.Type, &c.Payload, &c.Status, &c.Result, &c.CreatedAt, &c.CompletedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 func (r *PostgresRepository) GetPendingCommands(ctx context.Context, agentName string) ([]Command, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, agent_name, type, payload, status, result, created_at, completed_at

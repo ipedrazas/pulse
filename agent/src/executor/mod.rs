@@ -6,8 +6,9 @@ use bollard::image::CreateImageOptions;
 use futures_util::StreamExt;
 use tracing::{error, info};
 
+use bollard::container::LogsOptions;
 use crate::proto::pulse::v1::{
-    CommandResult, RunContainer, ServerCommand, StopContainer, server_command,
+    CommandResult, RequestLogs, RunContainer, ServerCommand, StopContainer, server_command,
 };
 
 pub struct Executor {
@@ -30,6 +31,7 @@ impl Executor {
             Some(server_command::Payload::StopContainer(sc)) => self.stop_container(sc).await,
             Some(server_command::Payload::PullImage(pi)) => self.pull_image(&pi.image).await,
             Some(server_command::Payload::ComposeUp(cu)) => self.compose_up(cu).await,
+            Some(server_command::Payload::RequestLogs(rl)) => self.request_logs(rl).await,
             _ => (false, String::new(), "unsupported command".to_string()),
         };
 
@@ -176,6 +178,37 @@ impl Executor {
         }
         info!("pulled image {}", image);
         (true, format!("pulled {}", image), String::new())
+    }
+
+    async fn request_logs(&self, rl: &RequestLogs) -> (bool, String, String) {
+        let tail = if rl.tail > 0 {
+            rl.tail.to_string()
+        } else {
+            "all".to_string()
+        };
+
+        let options = LogsOptions::<String> {
+            stdout: true,
+            stderr: true,
+            tail,
+            follow: false,
+            ..Default::default()
+        };
+
+        let mut stream = self.docker.logs(&rl.container_id, Some(options));
+        let mut lines = Vec::new();
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(output) => lines.push(output.to_string()),
+                Err(e) => {
+                    error!("log stream error: {}", e);
+                    return (false, lines.join(""), e.to_string());
+                }
+            }
+        }
+
+        (true, lines.join(""), String::new())
     }
 
     async fn compose_up(&self, cu: &crate::proto::pulse::v1::ComposeUp) -> (bool, String, String) {

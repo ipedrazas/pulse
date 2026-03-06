@@ -20,6 +20,7 @@ type Repository interface {
 
 	// Commands
 	CreateCommand(ctx context.Context, cmd Command) error
+	GetCommand(ctx context.Context, id string) (*Command, error)
 	GetPendingCommands(ctx context.Context, agentName string) ([]Command, error)
 	CompleteCommand(ctx context.Context, id, result string, success bool) error
 }

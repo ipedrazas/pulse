@@ -44,6 +44,9 @@ func (m *mockRepo) InsertContainerEvent(_ context.Context, _ repository.Containe
 	return m.err
 }
 func (m *mockRepo) CreateCommand(_ context.Context, _ repository.Command) error { return m.err }
+func (m *mockRepo) GetCommand(_ context.Context, _ string) (*repository.Command, error) {
+	return nil, m.err
+}
 func (m *mockRepo) GetPendingCommands(_ context.Context, _ string) ([]repository.Command, error) {
 	return nil, m.err
 }
