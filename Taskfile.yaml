@@ -102,7 +102,7 @@ tasks:
     dir: cli
     cmds:
       - gofmt -w .
-  
+
   cli:install:
     desc: install the CLI
     dir: cli
