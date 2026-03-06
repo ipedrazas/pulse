@@ -1,0 +1,218 @@
+syntax = "proto3";
+
+package pulse.v1;
+
+option go_package = "github.com/ipedrazas/pulse/api/internal/gen/pulse/v1;pulsev1";
+
+import "google/protobuf/timestamp.proto";
+
+// =============================================================================
+// Agent Service — bidirectional streaming between agents and the API
+// =============================================================================
+
+service AgentService {
+  // Connect establishes a long-lived bidirectional stream.
+  // The agent sends heartbeats and container reports.
+  // The server pushes commands for execution.
+  rpc StreamLink(stream AgentMessage) returns (stream ServerCommand);
+}
+
+// --- Agent → Server messages ---
+
+message AgentMessage {
+  oneof payload {
+    Heartbeat heartbeat = 1;
+    ContainerReport container_report = 2;
+    CommandResult command_result = 3;
+    LogLines log_lines = 4;
+    FileAck file_ack = 5;
+  }
+}
+
+message Heartbeat {
+  string node_name = 1;
+  string agent_version = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message ContainerReport {
+  string node_name = 1;
+  repeated ContainerInfo containers = 2;
+}
+
+message ContainerInfo {
+  string id = 1;
+  string name = 2;
+  string image = 3;
+  string status = 4;           // running, exited, paused, etc.
+  map<string, string> env_vars = 5;
+  repeated string mounts = 6;
+  map<string, string> labels = 7;
+  repeated PortMapping ports = 8;
+  int64 uptime_seconds = 9;
+  string compose_project = 10;
+  string command = 11;
+}
+
+message PortMapping {
+  string host_ip = 1;
+  uint32 host_port = 2;
+  uint32 container_port = 3;
+  string protocol = 4;        // tcp, udp
+}
+
+message CommandResult {
+  string command_id = 1;
+  string node_name = 2;
+  bool success = 3;
+  string output = 4;
+  string error = 5;
+  int64 duration_ms = 6;
+}
+
+message LogLines {
+  string command_id = 1;
+  string container_id = 2;
+  repeated string lines = 3;
+  bool eof = 4;               // true when log stream is done
+}
+
+message FileAck {
+  string command_id = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+// --- Server → Agent commands ---
+
+message ServerCommand {
+  string command_id = 1;       // unique ID for tracking results
+
+  oneof payload {
+    RunContainer run_container = 2;
+    StopContainer stop_container = 3;
+    PullImage pull_image = 4;
+    ComposeUp compose_up = 5;
+    SendFile send_file = 6;
+    RequestLogs request_logs = 7;
+  }
+}
+
+message RunContainer {
+  string image = 1;
+  string name = 2;
+  map<string, string> env = 3;
+  repeated PortMapping ports = 4;
+  repeated string volumes = 5;
+  repeated string command = 6;
+  bool remove = 7;            // --rm flag
+}
+
+message StopContainer {
+  string container_id = 1;
+  int32 timeout_seconds = 2;  // grace period before SIGKILL
+}
+
+message PullImage {
+  string image = 1;
+}
+
+message ComposeUp {
+  string project_dir = 1;     // working directory on the agent
+  string file = 2;            // compose file path or oci:// reference
+  bool detach = 3;
+  bool pull = 4;              // pull images before starting
+}
+
+message SendFile {
+  string path = 1;            // destination path on the agent
+  bytes data = 2;             // file chunk
+  int64 offset = 3;           // byte offset for this chunk
+  int64 total_size = 4;       // total file size
+  bool final_chunk = 5;       // true for last chunk
+}
+
+message RequestLogs {
+  string container_id = 1;
+  bool follow = 2;
+  int32 tail = 3;             // number of lines from the end (0 = all)
+}
+
+// =============================================================================
+// CLI Service — request/response RPCs for the CLI and UI
+// =============================================================================
+
+service CLIService {
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+  rpc GetContainer(GetContainerRequest) returns (GetContainerResponse);
+  rpc SendCommand(SendCommandRequest) returns (SendCommandResponse);
+}
+
+// --- Nodes ---
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+  repeated NodeInfo nodes = 1;
+}
+
+message GetNodeRequest {
+  string name = 1;
+}
+
+message GetNodeResponse {
+  NodeInfo node = 1;
+  repeated ContainerInfo containers = 2;
+}
+
+message NodeInfo {
+  string name = 1;
+  string status = 2;          // online, offline
+  string agent_version = 3;
+  google.protobuf.Timestamp last_seen = 4;
+  int32 container_count = 5;
+}
+
+// --- Containers ---
+
+message ListContainersRequest {
+  string node_name = 1;       // optional: filter by node
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListContainersResponse {
+  repeated ContainerInfo containers = 1;
+  string next_page_token = 2;
+}
+
+message GetContainerRequest {
+  string container_id = 1;
+}
+
+message GetContainerResponse {
+  ContainerInfo container = 1;
+}
+
+// --- Commands ---
+
+message SendCommandRequest {
+  string node_name = 1;
+
+  oneof command {
+    RunContainer run_container = 2;
+    StopContainer stop_container = 3;
+    PullImage pull_image = 4;
+    ComposeUp compose_up = 5;
+    SendFile send_file = 6;
+    RequestLogs request_logs = 7;
+  }
+}
+
+message SendCommandResponse {
+  string command_id = 1;
+  bool accepted = 2;
+  string error = 3;
+}

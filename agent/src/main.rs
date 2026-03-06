@@ -1,3 +1,11 @@
+pub mod proto {
+    pub mod pulse {
+        pub mod v1 {
+            tonic::include_proto!("pulse.v1");
+        }
+    }
+}
+
 use tracing::info;
 
 #[tokio::main]
