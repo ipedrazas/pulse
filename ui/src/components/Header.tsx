@@ -1,3 +1,5 @@
+import { PulseLogo } from './PulseLogo'
+
 interface HeaderProps {
   healthy: boolean
 }
@@ -7,6 +9,7 @@ export function Header({ healthy }: HeaderProps) {
     <header className="border-b border-gray-800 bg-gray-950 px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
+          <PulseLogo />
           <h1 className="text-xl font-bold text-white">Pulse</h1>
           <span className="text-sm text-gray-500">v{__APP_VERSION__}</span>
         </div>

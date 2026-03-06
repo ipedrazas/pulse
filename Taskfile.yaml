@@ -7,7 +7,8 @@ vars:
   IMAGE_API: pulse-api
   IMAGE_AGENT: pulse-agent
   IMAGE_UI: pulse-ui
-  VERSION: '{{.VERSION | default "dev"}}'
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
   COMMIT:
     sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
   BUILD_DATE:
@@ -101,6 +102,16 @@ tasks:
     dir: cli
     cmds:
       - gofmt -w .
+  
+  cli:install:
+    desc: install the CLI
+    dir: cli
+    cmds:
+      - >-
+        go install
+        -ldflags="-s -w -X github.com/ipedrazas/pulse/cli/internal/version.Version={{.VERSION}}
+        -X github.com/ipedrazas/pulse/cli/internal/version.Commit={{.COMMIT}}
+        -X github.com/ipedrazas/pulse/cli/internal/version.BuildDate={{.BUILD_DATE}}" ./cmd/pulse
 
   # --- Agent (Rust) ---
   agent:build:
@@ -144,8 +155,8 @@ tasks:
     desc: Build agent release binary for Linux (amd64)
     dir: agent
     cmds:
-      - cargo build --release --target x86_64-unknown-linux-gnu
-      - cp target/x86_64-unknown-linux-gnu/release/pulse-agent bin/pulse-agent-linux-amd64
+      - cargo build --release --target x86_64-unknown-linux-musl
+      - cp target/x86_64-unknown-linux-musl/release/pulse-agent bin/pulse-agent-linux-amd64
 
   agent:release:
     desc: Build agent release binaries for all platforms
