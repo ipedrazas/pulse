@@ -155,7 +155,11 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Set version in Cargo.toml
-        run: sed -i 's/^version = ".*"/version = "${{ inputs.version }}"/' Cargo.toml
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
