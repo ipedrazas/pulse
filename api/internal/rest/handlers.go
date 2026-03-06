@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ipedrazas/pulse/api/internal/repository"
+	"github.com/ipedrazas/pulse/api/internal/version"
 )
 
 type Handler struct {
@@ -20,6 +21,7 @@ func NewHandler(repo repository.Repository) *Handler {
 
 func (h *Handler) Register(r *gin.Engine) {
 	r.GET("/healthz", h.healthz)
+	r.GET("/info", h.info)
 
 	api := r.Group("/api/v1")
 	api.GET("/nodes", h.listNodes)
@@ -31,6 +33,14 @@ func (h *Handler) Register(r *gin.Engine) {
 
 func (h *Handler) healthz(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handler) info(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"version":    version.Version,
+		"commit":     version.Commit,
+		"build_date": version.BuildDate,
+	})
 }
 
 func (h *Handler) listNodes(c *gin.Context) {

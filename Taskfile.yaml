@@ -7,6 +7,11 @@ vars:
   IMAGE_API: pulse-api
   IMAGE_AGENT: pulse-agent
   IMAGE_UI: pulse-ui
+  VERSION: '{{.VERSION | default "dev"}}'
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  BUILD_DATE:
+    sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
 
 tasks:
   default:
@@ -32,7 +37,12 @@ tasks:
     desc: Build the API server
     dir: api
     cmds:
-      - go build -o bin/pulse-api ./cmd/api
+      - >-
+        go build
+        -ldflags="-X github.com/ipedrazas/pulse/api/internal/version.Version={{.VERSION}}
+        -X github.com/ipedrazas/pulse/api/internal/version.Commit={{.COMMIT}}
+        -X github.com/ipedrazas/pulse/api/internal/version.BuildDate={{.BUILD_DATE}}"
+        -o bin/pulse-api ./cmd/api
     sources:
       - "**/*.go"
 
@@ -65,7 +75,12 @@ tasks:
     desc: Build the CLI
     dir: cli
     cmds:
-      - go build -o bin/pulse ./cmd/pulse
+      - >-
+        go build
+        -ldflags="-X github.com/ipedrazas/pulse/cli/internal/version.Version={{.VERSION}}
+        -X github.com/ipedrazas/pulse/cli/internal/version.Commit={{.COMMIT}}
+        -X github.com/ipedrazas/pulse/cli/internal/version.BuildDate={{.BUILD_DATE}}"
+        -o bin/pulse ./cmd/pulse
     sources:
       - "**/*.go"
 
@@ -156,6 +171,8 @@ tasks:
   ui:build:
     desc: Build UI for production
     dir: ui
+    env:
+      PULSE_VERSION: "{{.VERSION}}"
     cmds:
       - npm run build
 
@@ -181,7 +198,12 @@ tasks:
   docker:api:
     desc: Build API Docker image
     cmds:
-      - docker build --platform linux/arm64,linux/amd64  -f api/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_API}}:latest . --push
+      - >-
+        docker build --platform linux/arm64,linux/amd64
+        --build-arg VERSION={{.VERSION}}
+        --build-arg COMMIT={{.COMMIT}}
+        --build-arg BUILD_DATE={{.BUILD_DATE}}
+        -f api/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_API}}:latest . --push
 
   docker:agent:
     desc: Build Agent Docker image
@@ -191,7 +213,10 @@ tasks:
   docker:ui:
     desc: Build UI Docker image
     cmds:
-      - docker build --platform linux/arm64,linux/amd64 -f ui/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_UI}}:latest . --push
+      - >-
+        docker build --platform linux/arm64,linux/amd64
+        --build-arg VERSION={{.VERSION}}
+        -f ui/Dockerfile -t {{.REGISTRY}}/{{.IMAGE_UI}}:latest . --push
 
   docker:build:
     desc: Build all Docker images

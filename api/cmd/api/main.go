@@ -15,6 +15,7 @@ import (
 	"github.com/ipedrazas/pulse/api/internal/grpcserver"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	"github.com/ipedrazas/pulse/api/internal/rest"
+	"github.com/ipedrazas/pulse/api/internal/version"
 	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -23,6 +24,8 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+
+	slog.Info("pulse-api starting", "version", version.Version, "commit", version.Commit)
 
 	cfg := config.Load()
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

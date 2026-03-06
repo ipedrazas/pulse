@@ -8,7 +8,7 @@ export function Header({ healthy }: HeaderProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-white">Pulse</h1>
-          <span className="text-sm text-gray-500">Container Management</span>
+          <span className="text-sm text-gray-500">v{__APP_VERSION__}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <span

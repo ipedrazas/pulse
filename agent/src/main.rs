@@ -30,6 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         node_name = %cfg.node_name,
         api_addr = %cfg.api_addr,
         poll_interval = ?cfg.poll_interval,
+        version = env!("CARGO_PKG_VERSION"),
         "pulse-agent starting"
     );
 

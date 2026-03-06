@@ -3,6 +3,8 @@ WORKDIR /app
 COPY ui/package.json ui/package-lock.json ./
 RUN npm ci
 COPY ui/ .
+ARG VERSION=dev
+ENV PULSE_VERSION=${VERSION}
 RUN npm run build
 
 FROM nginx:alpine

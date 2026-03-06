@@ -12,7 +12,14 @@ RUN mkdir -p proto/gen/pulse/v1 \
            --go-grpc_out=proto/gen --go-grpc_opt=paths=source_relative \
            -I proto proto/pulse/v1/pulse.proto
 COPY api/ ./api/
-RUN cd api && CGO_ENABLED=0 go build -o /pulse-api ./cmd/api
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+RUN cd api && CGO_ENABLED=0 go build \
+    -ldflags="-X github.com/ipedrazas/pulse/api/internal/version.Version=${VERSION} \
+    -X github.com/ipedrazas/pulse/api/internal/version.Commit=${COMMIT} \
+    -X github.com/ipedrazas/pulse/api/internal/version.BuildDate=${BUILD_DATE}" \
+    -o /pulse-api ./cmd/api
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
