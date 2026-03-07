@@ -2,11 +2,14 @@
 
 Pulse is a distributed system to manage container workloads across multiple remote machines.
 
+
+![screenshot](docs/assets/screenshot.png)
+
 ## Architecture
 
 ```
-CLI (Go/Cobra) ──gRPC──┐
-                        ├── API Server (Go/Gin) ── TimescaleDB
+CLI (Go/Cobra) ── gRPC ───┐
+                          ├── API Server (Go/Gin) ── TimescaleDB
 UI (React/Tailwind) ─REST─┘        │
                               gRPC stream
                                    │
