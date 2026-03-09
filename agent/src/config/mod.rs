@@ -29,7 +29,9 @@ impl Config {
         Self {
             api_addr: env::var("PULSE_API_ADDR")
                 .unwrap_or_else(|_| "http://localhost:9090".to_string()),
-            node_name: env::var("PULSE_NODE_NAME").unwrap_or_else(|_| hostname()),
+            node_name: env::var("PULSE_NODE_NAME")
+                .unwrap_or_else(|_| hostname())
+                .to_lowercase(),
             poll_interval: Duration::from_secs(poll_secs),
             redact_patterns,
             _tls_cert: env::var("PULSE_TLS_CERT").ok(),

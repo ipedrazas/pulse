@@ -26,6 +26,7 @@ func (h *Handler) Register(r *gin.Engine) {
 	api := r.Group("/api/v1")
 	api.GET("/nodes", h.listNodes)
 	api.GET("/nodes/:name", h.getNode)
+	api.DELETE("/nodes/:name", h.deleteNode)
 	api.GET("/containers", h.listContainers)
 	api.GET("/containers/:id", h.getContainer)
 	api.POST("/commands", h.createCommand)
@@ -95,6 +96,15 @@ func (h *Handler) getNode(c *gin.Context) {
 		"agent":      agent,
 		"containers": containers,
 	})
+}
+
+func (h *Handler) deleteNode(c *gin.Context) {
+	name := c.Param("name")
+	if err := h.repo.DeleteAgent(c.Request.Context(), name); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": name})
 }
 
 func (h *Handler) listContainers(c *gin.Context) {

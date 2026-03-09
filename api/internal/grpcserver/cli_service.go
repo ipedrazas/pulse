@@ -75,6 +75,18 @@ func (s *CLIService) GetNode(ctx context.Context, req *pulsev1.GetNodeRequest) (
 	}, nil
 }
 
+func (s *CLIService) DeleteNode(ctx context.Context, req *pulsev1.DeleteNodeRequest) (*pulsev1.DeleteNodeResponse, error) {
+	if req.Name == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "name is required")
+	}
+	if err := s.repo.DeleteAgent(ctx, req.Name); err != nil {
+		return nil, status.Errorf(codes.NotFound, "node %q not found", req.Name)
+	}
+	s.agentService.streams.Remove(req.Name)
+	slog.Info("node deleted", "node", req.Name)
+	return &pulsev1.DeleteNodeResponse{}, nil
+}
+
 func (s *CLIService) ListContainers(ctx context.Context, req *pulsev1.ListContainersRequest) (*pulsev1.ListContainersResponse, error) {
 	pageSize := int(req.PageSize)
 	if pageSize <= 0 {

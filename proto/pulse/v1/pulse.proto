@@ -156,6 +156,7 @@ message RequestLogs {
 service CLIService {
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
   rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc DeleteNode(DeleteNodeRequest) returns (DeleteNodeResponse);
   rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
   rpc GetContainer(GetContainerRequest) returns (GetContainerResponse);
   rpc SendCommand(SendCommandRequest) returns (SendCommandResponse);
@@ -178,6 +179,12 @@ message GetNodeResponse {
   NodeInfo node = 1;
   repeated ContainerInfo containers = 2;
 }
+
+message DeleteNodeRequest {
+  string name = 1;
+}
+
+message DeleteNodeResponse {}
 
 message NodeInfo {
   string name = 1;

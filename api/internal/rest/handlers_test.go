@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ipedrazas/pulse/api/internal/repository"
@@ -51,6 +52,10 @@ func (m *mockRepo) GetPendingCommands(_ context.Context, _ string) ([]repository
 	return nil, m.err
 }
 func (m *mockRepo) CompleteCommand(_ context.Context, _, _ string, _ bool) error { return m.err }
+func (m *mockRepo) DeleteAgent(_ context.Context, _ string) error                { return m.err }
+func (m *mockRepo) MarkStaleAgents(_ context.Context, _ time.Duration) (int, error) {
+	return 0, m.err
+}
 
 func setupRouter(repo repository.Repository) *gin.Engine {
 	gin.SetMode(gin.TestMode)

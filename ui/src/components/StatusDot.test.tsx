@@ -15,6 +15,12 @@ describe('StatusDot', () => {
     expect(dot?.className).toContain('bg-orange-400')
   })
 
+  it('renders red for lost status', () => {
+    const { container } = render(<StatusDot status="lost" />)
+    const dot = container.querySelector('span')
+    expect(dot?.className).toContain('bg-red-400')
+  })
+
   it('renders gray for unknown status', () => {
     const { container } = render(<StatusDot status="something" />)
     const dot = container.querySelector('span')

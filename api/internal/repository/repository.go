@@ -1,6 +1,9 @@
 package repository
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Repository interface {
 	// Agents
@@ -8,6 +11,8 @@ type Repository interface {
 	GetAgent(ctx context.Context, name string) (*Agent, error)
 	ListAgents(ctx context.Context) ([]Agent, error)
 	SetAgentStatus(ctx context.Context, name, status string) error
+	DeleteAgent(ctx context.Context, name string) error
+	MarkStaleAgents(ctx context.Context, threshold time.Duration) (int, error)
 
 	// Containers
 	UpsertContainer(ctx context.Context, c Container) error

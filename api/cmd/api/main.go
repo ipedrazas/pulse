@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ipedrazas/pulse/api/internal/alerts"
@@ -85,6 +86,25 @@ func main() {
 		slog.Info("REST server listening", "addr", cfg.RESTAddr)
 		if err := router.Run(cfg.RESTAddr); err != nil {
 			slog.Error("rest serve failed", "error", err)
+		}
+	}()
+
+	// Stale node detection
+	go func() {
+		ticker := time.NewTicker(cfg.StaleThreshold)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := repo.MarkStaleAgents(context.Background(), cfg.StaleThreshold)
+				if err != nil {
+					slog.Error("mark stale agents failed", "error", err)
+				} else if n > 0 {
+					slog.Warn("marked agents as lost", "count", n, "threshold", cfg.StaleThreshold)
+				}
+			}
 		}
 	}()
 

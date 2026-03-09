@@ -89,6 +89,28 @@ func (r *PostgresRepository) SetAgentStatus(ctx context.Context, name, status st
 	return err
 }
 
+func (r *PostgresRepository) DeleteAgent(ctx context.Context, name string) error {
+	result, err := r.pool.Exec(ctx, `DELETE FROM agents WHERE name = $1`, name)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *PostgresRepository) MarkStaleAgents(ctx context.Context, threshold time.Duration) (int, error) {
+	cutoff := time.Now().Add(-threshold)
+	result, err := r.pool.Exec(ctx, `
+		UPDATE agents SET status = 'lost'
+		WHERE status = 'online' AND last_seen < $1`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return int(result.RowsAffected()), nil
+}
+
 // --- Containers ---
 
 func (r *PostgresRepository) UpsertContainer(ctx context.Context, c Container) error {
