@@ -103,6 +103,17 @@ func (s *AgentService) handleHeartbeat(
 		Version:  hb.AgentVersion,
 		LastSeen: &now,
 	}
+	if hb.Metadata != nil {
+		agent.Metadata = &repository.NodeMetadata{
+			Hostname:         hb.Metadata.Hostname,
+			IPAddress:        hb.Metadata.IpAddress,
+			OSName:           hb.Metadata.OsName,
+			OSVersion:        hb.Metadata.OsVersion,
+			KernelVersion:    hb.Metadata.KernelVersion,
+			UptimeSeconds:    hb.Metadata.UptimeSeconds,
+			PackagesToUpdate: hb.Metadata.PackagesToUpdate,
+		}
+	}
 	if err := s.repo.UpsertAgent(ctx, agent); err != nil {
 		slog.Error("upsert agent failed", "node", nodeName, "error", err)
 	}

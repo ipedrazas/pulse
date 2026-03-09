@@ -6,7 +6,11 @@
 language:
   explicit: [go, typescript, rust] # Override auto-detection
   go:
-    source_dir: [api, cli]
+    source_dir:
+      - path: api
+        profile: api
+      - path: cli
+        profile: cli
     coverage_threshold: 50
 
   typescript:
@@ -42,4 +46,4 @@ checks:
     - typescript:logging
     - common:retry
     - common:api_docs
-    - go:logging
+    

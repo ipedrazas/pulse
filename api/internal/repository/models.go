@@ -3,11 +3,22 @@ package repository
 import "time"
 
 type Agent struct {
-	Name      string     `json:"name"`
-	Status    string     `json:"status"`
-	Version   string     `json:"version"`
-	LastSeen  *time.Time `json:"last_seen,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
+	Name      string         `json:"name"`
+	Status    string         `json:"status"`
+	Version   string         `json:"version"`
+	LastSeen  *time.Time     `json:"last_seen,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+	Metadata  *NodeMetadata  `json:"metadata,omitempty"`
+}
+
+type NodeMetadata struct {
+	Hostname         string `json:"hostname,omitempty"`
+	IPAddress        string `json:"ip_address,omitempty"`
+	OSName           string `json:"os_name,omitempty"`
+	OSVersion        string `json:"os_version,omitempty"`
+	KernelVersion    string `json:"kernel_version,omitempty"`
+	UptimeSeconds    int64  `json:"uptime_seconds,omitempty"`
+	PackagesToUpdate int32  `json:"packages_to_update"`
 }
 
 type Container struct {

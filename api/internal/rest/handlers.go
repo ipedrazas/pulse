@@ -51,16 +51,17 @@ func (h *Handler) listNodes(c *gin.Context) {
 	}
 
 	type nodeResponse struct {
-		Name           string  `json:"name"`
-		Status         string  `json:"status"`
-		Version        string  `json:"version"`
-		LastSeen       *string `json:"last_seen,omitempty"`
-		ContainerCount int     `json:"container_count"`
+		Name           string                   `json:"name"`
+		Status         string                   `json:"status"`
+		Version        string                   `json:"version"`
+		LastSeen       *string                  `json:"last_seen,omitempty"`
+		ContainerCount int                      `json:"container_count"`
+		Metadata       *repository.NodeMetadata `json:"metadata,omitempty"`
 	}
 
 	var nodes []nodeResponse
 	for _, a := range agents {
-		n := nodeResponse{Name: a.Name, Status: a.Status, Version: a.Version}
+		n := nodeResponse{Name: a.Name, Status: a.Status, Version: a.Version, Metadata: a.Metadata}
 		if a.LastSeen != nil {
 			s := a.LastSeen.Format("2006-01-02T15:04:05Z07:00")
 			n.LastSeen = &s

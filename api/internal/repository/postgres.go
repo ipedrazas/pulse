@@ -21,32 +21,43 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 // --- Agents ---
 
 func (r *PostgresRepository) UpsertAgent(ctx context.Context, a Agent) error {
+	metadataJSON, _ := json.Marshal(a.Metadata)
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO agents (name, status, version, last_seen)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO agents (name, status, version, last_seen, metadata)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (name) DO UPDATE SET
 			status = EXCLUDED.status,
 			version = EXCLUDED.version,
-			last_seen = EXCLUDED.last_seen`,
-		a.Name, a.Status, a.Version, a.LastSeen)
+			last_seen = EXCLUDED.last_seen,
+			metadata = EXCLUDED.metadata`,
+		a.Name, a.Status, a.Version, a.LastSeen, metadataJSON)
 	return err
 }
 
 func (r *PostgresRepository) GetAgent(ctx context.Context, name string) (*Agent, error) {
 	var a Agent
+	var metadataJSON []byte
 	err := r.pool.QueryRow(ctx, `
-		SELECT name, status, version, last_seen, created_at
+		SELECT name, status, version, last_seen, created_at, metadata
 		FROM agents WHERE name = $1`, name).
-		Scan(&a.Name, &a.Status, &a.Version, &a.LastSeen, &a.CreatedAt)
+		Scan(&a.Name, &a.Status, &a.Version, &a.LastSeen, &a.CreatedAt, &metadataJSON)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
-	return &a, err
+	if err != nil {
+		return nil, err
+	}
+	if len(metadataJSON) > 0 {
+		var m NodeMetadata
+		json.Unmarshal(metadataJSON, &m)
+		a.Metadata = &m
+	}
+	return &a, nil
 }
 
 func (r *PostgresRepository) ListAgents(ctx context.Context) ([]Agent, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT name, status, version, last_seen, created_at
+		SELECT name, status, version, last_seen, created_at, metadata
 		FROM agents ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -56,8 +67,14 @@ func (r *PostgresRepository) ListAgents(ctx context.Context) ([]Agent, error) {
 	var agents []Agent
 	for rows.Next() {
 		var a Agent
-		if err := rows.Scan(&a.Name, &a.Status, &a.Version, &a.LastSeen, &a.CreatedAt); err != nil {
+		var metadataJSON []byte
+		if err := rows.Scan(&a.Name, &a.Status, &a.Version, &a.LastSeen, &a.CreatedAt, &metadataJSON); err != nil {
 			return nil, err
+		}
+		if len(metadataJSON) > 0 {
+			var m NodeMetadata
+			json.Unmarshal(metadataJSON, &m)
+			a.Metadata = &m
 		}
 		agents = append(agents, a)
 	}

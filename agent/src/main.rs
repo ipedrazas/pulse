@@ -11,6 +11,7 @@ mod docker;
 mod executor;
 mod grpc;
 mod redact;
+mod sysinfo;
 
 use proto::pulse::v1::{AgentMessage, Heartbeat, agent_message};
 use tokio::sync::mpsc;
@@ -58,12 +59,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 while !stream_broken {
                     tokio::select! {
                         _ = poll_interval.tick() => {
-                            // Send heartbeat
+                            // Send heartbeat with node metadata
+                            let metadata = sysinfo::collect();
                             let heartbeat = AgentMessage {
                                 payload: Some(agent_message::Payload::Heartbeat(Heartbeat {
                                     node_name: cfg.node_name.clone(),
                                     agent_version: env!("CARGO_PKG_VERSION").to_string(),
                                     timestamp: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
+                                    metadata: Some(metadata),
                                 })),
                             };
                             if let Err(e) = outbound_tx.send(heartbeat).await {

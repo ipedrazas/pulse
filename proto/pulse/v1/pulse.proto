@@ -33,6 +33,17 @@ message Heartbeat {
   string node_name = 1;
   string agent_version = 2;
   google.protobuf.Timestamp timestamp = 3;
+  NodeMetadata metadata = 4;
+}
+
+message NodeMetadata {
+  string hostname = 1;
+  string ip_address = 2;
+  string os_name = 3;           // e.g. "Ubuntu", "Debian GNU/Linux"
+  string os_version = 4;        // e.g. "24.04", "12"
+  string kernel_version = 5;
+  int64 uptime_seconds = 6;
+  int32 packages_to_update = 7; // -1 if unknown/not applicable
 }
 
 message ContainerReport {
@@ -174,6 +185,7 @@ message NodeInfo {
   string agent_version = 3;
   google.protobuf.Timestamp last_seen = 4;
   int32 container_count = 5;
+  NodeMetadata metadata = 6;
 }
 
 // --- Containers ---

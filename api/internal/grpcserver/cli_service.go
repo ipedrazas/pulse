@@ -42,15 +42,7 @@ func (s *CLIService) ListNodes(ctx context.Context, _ *pulsev1.ListNodesRequest)
 		if err != nil {
 			slog.Error("count containers failed", "node", a.Name, "error", err)
 		}
-		node := &pulsev1.NodeInfo{
-			Name:           a.Name,
-			Status:         a.Status,
-			AgentVersion:   a.Version,
-			ContainerCount: int32(count),
-		}
-		if a.LastSeen != nil {
-			node.LastSeen = timestamppb.New(*a.LastSeen)
-		}
+		node := agentToNodeInfo(a, int32(count))
 		nodes = append(nodes, node)
 	}
 	return &pulsev1.ListNodesResponse{Nodes: nodes}, nil
@@ -70,15 +62,7 @@ func (s *CLIService) GetNode(ctx context.Context, req *pulsev1.GetNodeRequest) (
 		return nil, status.Errorf(codes.Internal, "list containers: %v", err)
 	}
 
-	node := &pulsev1.NodeInfo{
-		Name:           agent.Name,
-		Status:         agent.Status,
-		AgentVersion:   agent.Version,
-		ContainerCount: int32(len(containers)),
-	}
-	if agent.LastSeen != nil {
-		node.LastSeen = timestamppb.New(*agent.LastSeen)
-	}
+	node := agentToNodeInfo(*agent, int32(len(containers)))
 
 	var protoContainers []*pulsev1.ContainerInfo
 	for _, c := range containers {
@@ -210,6 +194,30 @@ func marshalCommand(req *pulsev1.SendCommandRequest) (string, []byte, error) {
 	default:
 		return "", nil, status.Errorf(codes.InvalidArgument, "unknown command type")
 	}
+}
+
+func agentToNodeInfo(a repository.Agent, containerCount int32) *pulsev1.NodeInfo {
+	node := &pulsev1.NodeInfo{
+		Name:           a.Name,
+		Status:         a.Status,
+		AgentVersion:   a.Version,
+		ContainerCount: containerCount,
+	}
+	if a.LastSeen != nil {
+		node.LastSeen = timestamppb.New(*a.LastSeen)
+	}
+	if a.Metadata != nil {
+		node.Metadata = &pulsev1.NodeMetadata{
+			Hostname:         a.Metadata.Hostname,
+			IpAddress:        a.Metadata.IPAddress,
+			OsName:           a.Metadata.OSName,
+			OsVersion:        a.Metadata.OSVersion,
+			KernelVersion:    a.Metadata.KernelVersion,
+			UptimeSeconds:    a.Metadata.UptimeSeconds,
+			PackagesToUpdate: a.Metadata.PackagesToUpdate,
+		}
+	}
+	return node
 }
 
 func containerToProto(c repository.Container) *pulsev1.ContainerInfo {
