@@ -77,13 +77,13 @@ fn uptime_seconds() -> i64 {
 
 fn packages_to_update() -> i32 {
     // Try apt (Debian/Ubuntu)
-    if let Ok(output) = Command::new("apt").args(["list", "--upgradable"]).output() {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // First line is "Listing..." header, count the rest
-            let count = stdout.lines().skip(1).filter(|l| !l.is_empty()).count();
-            return count as i32;
-        }
+    if let Ok(output) = Command::new("apt").args(["list", "--upgradable"]).output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // First line is "Listing..." header, count the rest
+        let count = stdout.lines().skip(1).filter(|l| !l.is_empty()).count();
+        return count as i32;
     }
     -1 // unknown / not applicable
 }
