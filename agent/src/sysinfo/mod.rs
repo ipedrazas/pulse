@@ -42,7 +42,10 @@ fn local_ip() -> String {
 fn os_field(key: &str) -> String {
     let content = fs::read_to_string("/etc/os-release").unwrap_or_default();
     for line in content.lines() {
-        if let Some(val) = line.strip_prefix(key).and_then(|rest| rest.strip_prefix('=')) {
+        if let Some(val) = line
+            .strip_prefix(key)
+            .and_then(|rest| rest.strip_prefix('='))
+        {
             return val.trim_matches('"').to_string();
         }
     }
@@ -74,10 +77,7 @@ fn uptime_seconds() -> i64 {
 
 fn packages_to_update() -> i32 {
     // Try apt (Debian/Ubuntu)
-    if let Ok(output) = Command::new("apt")
-        .args(["list", "--upgradable"])
-        .output()
-    {
+    if let Ok(output) = Command::new("apt").args(["list", "--upgradable"]).output() {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             // First line is "Listing..." header, count the rest

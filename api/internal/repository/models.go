@@ -3,12 +3,12 @@ package repository
 import "time"
 
 type Agent struct {
-	Name      string         `json:"name"`
-	Status    string         `json:"status"`
-	Version   string         `json:"version"`
-	LastSeen  *time.Time     `json:"last_seen,omitempty"`
-	CreatedAt time.Time      `json:"created_at"`
-	Metadata  *NodeMetadata  `json:"metadata,omitempty"`
+	Name      string        `json:"name"`
+	Status    string        `json:"status"`
+	Version   string        `json:"version"`
+	LastSeen  *time.Time    `json:"last_seen,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
+	Metadata  *NodeMetadata `json:"metadata,omitempty"`
 }
 
 type NodeMetadata struct {
