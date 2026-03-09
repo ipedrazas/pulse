@@ -9,10 +9,10 @@ describe('StatusDot', () => {
     expect(dot?.className).toContain('bg-green-400')
   })
 
-  it('renders gray for offline status', () => {
+  it('renders orange for offline status', () => {
     const { container } = render(<StatusDot status="offline" />)
     const dot = container.querySelector('span')
-    expect(dot?.className).toContain('bg-gray-500')
+    expect(dot?.className).toContain('bg-orange-400')
   })
 
   it('renders gray for unknown status', () => {

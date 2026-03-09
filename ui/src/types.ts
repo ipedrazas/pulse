@@ -1,9 +1,20 @@
+export interface NodeMetadata {
+  hostname?: string
+  ip_address?: string
+  os_name?: string
+  os_version?: string
+  kernel_version?: string
+  uptime_seconds?: number
+  packages_to_update?: number
+}
+
 export interface Agent {
   name: string
   status: string
   version: string
   last_seen?: string
   container_count: number
+  metadata?: NodeMetadata
 }
 
 export interface Port {

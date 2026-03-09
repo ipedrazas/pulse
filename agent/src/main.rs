@@ -47,6 +47,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok((outbound_tx, inbound)) => {
                 info!("stream established");
 
+                // Collect and send node metadata once on connection
+                let metadata = sysinfo::collect();
+                let initial_heartbeat = AgentMessage {
+                    payload: Some(agent_message::Payload::Heartbeat(Heartbeat {
+                        node_name: cfg.node_name.clone(),
+                        agent_version: env!("CARGO_PKG_VERSION").to_string(),
+                        timestamp: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
+                        metadata: Some(metadata),
+                    })),
+                };
+                if let Err(e) = outbound_tx.send(initial_heartbeat).await {
+                    error!("failed to send initial heartbeat: {}", e);
+                    continue;
+                }
+
                 // Channel for commands received from server
                 let (cmd_tx, mut cmd_rx) = mpsc::channel(32);
 
@@ -59,14 +74,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 while !stream_broken {
                     tokio::select! {
                         _ = poll_interval.tick() => {
-                            // Send heartbeat with node metadata
-                            let metadata = sysinfo::collect();
+                            // Send heartbeat (no metadata — sent once on connect)
                             let heartbeat = AgentMessage {
                                 payload: Some(agent_message::Payload::Heartbeat(Heartbeat {
                                     node_name: cfg.node_name.clone(),
                                     agent_version: env!("CARGO_PKG_VERSION").to_string(),
                                     timestamp: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
-                                    metadata: Some(metadata),
+                                    metadata: None,
                                 })),
                             };
                             if let Err(e) = outbound_tx.send(heartbeat).await {

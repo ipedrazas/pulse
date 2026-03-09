@@ -21,15 +21,18 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 // --- Agents ---
 
 func (r *PostgresRepository) UpsertAgent(ctx context.Context, a Agent) error {
-	metadataJSON, _ := json.Marshal(a.Metadata)
+	var metadataJSON []byte
+	if a.Metadata != nil {
+		metadataJSON, _ = json.Marshal(a.Metadata)
+	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO agents (name, status, version, last_seen, metadata)
-		VALUES ($1, $2, $3, $4, $5)
+		VALUES ($1, $2, $3, $4, COALESCE($5::jsonb, '{}'::jsonb))
 		ON CONFLICT (name) DO UPDATE SET
 			status = EXCLUDED.status,
 			version = EXCLUDED.version,
 			last_seen = EXCLUDED.last_seen,
-			metadata = EXCLUDED.metadata`,
+			metadata = CASE WHEN $5::jsonb IS NOT NULL THEN $5::jsonb ELSE agents.metadata END`,
 		a.Name, a.Status, a.Version, a.LastSeen, metadataJSON)
 	return err
 }
