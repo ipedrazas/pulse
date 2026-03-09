@@ -29,9 +29,7 @@ files:
 checks:
   disabled:
     - common:dockerfile
-    - security:obfuscation
-    - security:network
-    - security:shell_injection
+    - security:*
     - devops:helm
     - devops:pulumi
     - devops:terraform

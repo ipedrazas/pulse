@@ -16,11 +16,13 @@ func newPullCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pull [image]",
 		Short: "Pull an image on a node",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if node == "" {
 				return fmt.Errorf("--node is required")
 			}
+
+			image := args[0]
 
 			client, conn, err := grpcclient.NewCLIClient(apiAddr)
 			if err != nil {
@@ -30,11 +32,6 @@ func newPullCmd() *cobra.Command {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-
-			image := ""
-			if len(args) > 0 {
-				image = args[0]
-			}
 
 			resp, err := client.SendCommand(ctx, &pulsev1.SendCommandRequest{
 				NodeName: node,
