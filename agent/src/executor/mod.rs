@@ -273,6 +273,19 @@ impl Executor {
     }
 
     async fn compose_up(&self, cu: &crate::proto::pulse::v1::ComposeUp) -> (bool, String, String) {
+        let work_dir = &cu.project_dir;
+
+        // Verify the working directory is accessible before running the command
+        if !work_dir.is_empty() && !std::path::Path::new(work_dir).exists() {
+            let msg = format!(
+                "working directory '{}' does not exist or is not accessible \
+                 (check systemd ProtectHome/ProtectSystem settings)",
+                work_dir
+            );
+            error!("{}", msg);
+            return (false, String::new(), msg);
+        }
+
         let mut cmd = tokio::process::Command::new(&self.docker_cli);
         cmd.arg("compose");
 
@@ -289,9 +302,22 @@ impl Executor {
             cmd.arg("--pull=always");
         }
 
-        if !cu.project_dir.is_empty() {
-            cmd.current_dir(&cu.project_dir);
+        if !work_dir.is_empty() {
+            cmd.current_dir(work_dir);
         }
+
+        info!(
+            "running: {} compose {} up {}{}in {}",
+            self.docker_cli.display(),
+            if cu.file.is_empty() {
+                String::new()
+            } else {
+                format!("-f {} ", cu.file)
+            },
+            if cu.detach { "-d " } else { "" },
+            if cu.pull { "--pull=always " } else { "" },
+            if work_dir.is_empty() { "." } else { work_dir },
+        );
 
         match cmd.output().await {
             Ok(output) => {
@@ -306,8 +332,22 @@ impl Executor {
                 }
             }
             Err(e) => {
-                error!("compose up exec failed: {}", e);
-                (false, String::new(), e.to_string())
+                error!(
+                    "compose up exec failed: {} (docker_cli={}, work_dir={})",
+                    e,
+                    self.docker_cli.display(),
+                    work_dir,
+                );
+                (
+                    false,
+                    String::new(),
+                    format!(
+                        "{} (docker_cli={}, work_dir={})",
+                        e,
+                        self.docker_cli.display(),
+                        work_dir,
+                    ),
+                )
             }
         }
     }
