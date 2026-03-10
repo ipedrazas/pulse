@@ -60,7 +60,7 @@ func (m *mockRepo) MarkStaleAgents(_ context.Context, _ time.Duration) (int, err
 func setupRouter(repo repository.Repository) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewHandler(repo)
+	h := NewHandler(repo, nil)
 	h.Register(r)
 	return r
 }

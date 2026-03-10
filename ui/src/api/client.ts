@@ -38,3 +38,29 @@ export async function getContainer(id: string): Promise<Container> {
 export async function getHealth(): Promise<{ status: string }> {
   return fetchJSON<{ status: string }>('/healthz')
 }
+
+export interface CommandResponse {
+  command_id: string
+  status: string
+  result?: string
+}
+
+export async function requestContainerLogs(
+  containerId: string,
+  tail = 100,
+): Promise<CommandResponse> {
+  const res = await fetch(`${BASE}/containers/${encodeURIComponent(containerId)}/logs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tail }),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`${res.status}: ${body}`)
+  }
+  return res.json() as Promise<CommandResponse>
+}
+
+export async function getCommandResult(commandId: string): Promise<CommandResponse> {
+  return fetchJSON<CommandResponse>(`${BASE}/commands/${encodeURIComponent(commandId)}`)
+}

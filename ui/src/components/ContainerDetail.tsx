@@ -1,17 +1,22 @@
+import { useState } from 'react'
 import type { Container } from '../types'
+import { ContainerLogs } from './ContainerLogs'
 
 interface ContainerDetailProps {
   container: Container
 }
 
 export function ContainerDetail({ container }: ContainerDetailProps) {
+  const [showLogs, setShowLogs] = useState(false)
+
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <Section title="Info">
-        <KV label="ID" value={container.container_id} mono />
-        <KV label="Command" value={container.command || '-'} mono />
-        <KV label="Compose Project" value={container.compose_project || '-'} />
-      </Section>
+    <div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Section title="Info">
+          <KV label="ID" value={container.container_id} mono />
+          <KV label="Command" value={container.command || '-'} mono />
+          <KV label="Compose Project" value={container.compose_project || '-'} />
+        </Section>
 
       <Section title="Environment Variables">
         {!container.env_vars || Object.keys(container.env_vars).length === 0 ? (
@@ -57,6 +62,24 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
           Object.entries(container.labels).map(([k, v]) => <KV key={k} label={k} value={v} mono />)
         )}
       </Section>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-4 flex gap-2">
+        <button
+          onClick={() => setShowLogs(!showLogs)}
+          className="rounded border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-300 hover:border-blue-500 hover:text-white transition"
+        >
+          {showLogs ? 'Hide Logs' : 'View Logs'}
+        </button>
+      </div>
+
+      {showLogs && (
+        <ContainerLogs
+          containerId={container.container_id}
+          onClose={() => setShowLogs(false)}
+        />
+      )}
     </div>
   )
 }
@@ -72,9 +95,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function KV({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex gap-2 text-sm">
-      <span className="text-gray-500">{label}:</span>
-      <span className={`text-gray-300 ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
+    <div className="flex flex-col gap-0.5 text-sm sm:flex-row sm:gap-2">
+      <span className="text-gray-500 shrink-0">{label}:</span>
+      <span className={`text-gray-300 break-all ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
     </div>
   )
 }

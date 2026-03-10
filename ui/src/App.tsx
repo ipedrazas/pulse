@@ -27,11 +27,11 @@ export default function App() {
     <div className="min-h-screen bg-gray-950 text-white">
       <Header healthy={healthy} />
 
-      <main className="mx-auto max-w-7xl px-6 py-6">
+      <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
         {/* Nodes */}
-        <section className="mb-8">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Nodes</h2>
+        <section className="mb-6 sm:mb-8">
+          <div className="mb-3 flex items-center justify-between sm:mb-4">
+            <h2 className="text-base font-semibold sm:text-lg">Nodes</h2>
             <button onClick={nodes.refresh} className="text-xs text-gray-500 hover:text-white">
               Refresh
             </button>
@@ -43,7 +43,7 @@ export default function App() {
           {nodes.data && nodes.data.length === 0 && <EmptyState message="No agents connected" />}
 
           {nodes.data && nodes.data.length > 0 && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {nodes.data.map((agent) => (
                 <NodeCard
                   key={agent.name}
@@ -58,8 +58,8 @@ export default function App() {
 
         {/* Containers */}
         <section>
-          <div className="mb-4 flex items-center gap-4">
-            <h2 className="text-lg font-semibold">
+          <div className="mb-3 flex flex-col gap-3 sm:mb-4 sm:flex-row sm:items-center sm:gap-4">
+            <h2 className="text-base font-semibold sm:text-lg">
               Containers
               {selectedNode && (
                 <span className="ml-2 text-sm font-normal text-gray-500">on {selectedNode}</span>

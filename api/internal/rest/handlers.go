@@ -2,6 +2,7 @@ package rest
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -11,12 +12,18 @@ import (
 	"github.com/ipedrazas/pulse/api/internal/version"
 )
 
-type Handler struct {
-	repo repository.Repository
+// CommandSender can send commands to connected agents.
+type CommandSender interface {
+	SendCommand(nodeName string, cmdID string, cmdType string, payload json.RawMessage) error
 }
 
-func NewHandler(repo repository.Repository) *Handler {
-	return &Handler{repo: repo}
+type Handler struct {
+	repo   repository.Repository
+	sender CommandSender
+}
+
+func NewHandler(repo repository.Repository, sender CommandSender) *Handler {
+	return &Handler{repo: repo, sender: sender}
 }
 
 func (h *Handler) Register(r *gin.Engine) {
@@ -29,7 +36,9 @@ func (h *Handler) Register(r *gin.Engine) {
 	api.DELETE("/nodes/:name", h.deleteNode)
 	api.GET("/containers", h.listContainers)
 	api.GET("/containers/:id", h.getContainer)
+	api.POST("/containers/:id/logs", h.requestContainerLogs)
 	api.POST("/commands", h.createCommand)
+	api.GET("/commands/:id", h.getCommand)
 }
 
 func (h *Handler) healthz(c *gin.Context) {
@@ -171,6 +180,82 @@ func (h *Handler) createCommand(c *gin.Context) {
 	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if h.sender != nil {
+		if err := h.sender.SendCommand(req.NodeName, cmd.ID, cmd.Type, cmd.Payload); err != nil {
+			slog.Info("agent not connected, command queued", "node", req.NodeName, "id", cmd.ID)
+		}
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"command_id": cmd.ID,
+		"status":     "pending",
+	})
+}
+
+func (h *Handler) getCommand(c *gin.Context) {
+	id := c.Param("id")
+	cmd, err := h.repo.GetCommand(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if cmd == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "command not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"command_id": cmd.ID,
+		"status":     cmd.Status,
+		"result":     cmd.Result,
+	})
+}
+
+func (h *Handler) requestContainerLogs(c *gin.Context) {
+	containerID := c.Param("id")
+
+	container, err := h.repo.GetContainer(c.Request.Context(), containerID, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if container == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+		return
+	}
+
+	var req struct {
+		Tail int `json:"tail"`
+	}
+	// Ignore bind errors; tail defaults to 0 (all lines)
+	_ = c.ShouldBindJSON(&req)
+	if req.Tail <= 0 {
+		req.Tail = 100
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"container_id": containerID,
+		"tail":         req.Tail,
+		"follow":       false,
+	})
+
+	cmd := repository.Command{
+		ID:        uuid.New().String(),
+		AgentName: container.AgentName,
+		Type:      "request_logs",
+		Payload:   payload,
+		Status:    "pending",
+	}
+	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if h.sender != nil {
+		if err := h.sender.SendCommand(container.AgentName, cmd.ID, cmd.Type, payload); err != nil {
+			slog.Info("agent not connected, command queued", "node", container.AgentName, "id", cmd.ID)
+		}
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{

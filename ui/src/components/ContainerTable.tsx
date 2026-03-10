@@ -50,77 +50,77 @@ export function ContainerTable({ containers, search }: ContainerTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-800">
-      <table className="w-full">
-        <thead className="bg-gray-900">
-          <tr>
-            <SortHeader
-              label="Name"
-              field="name"
-              sortKey={sortKey}
-              sortAsc={sortAsc}
-              onSort={handleSort}
-            />
-            <SortHeader
-              label="Image"
-              field="image"
-              sortKey={sortKey}
-              sortAsc={sortAsc}
-              onSort={handleSort}
-            />
-            <SortHeader
-              label="Status"
-              field="status"
-              sortKey={sortKey}
-              sortAsc={sortAsc}
-              onSort={handleSort}
-            />
-            <SortHeader
-              label="Node"
-              field="agent_name"
-              sortKey={sortKey}
-              sortAsc={sortAsc}
-              onSort={handleSort}
-            />
-            <SortHeader
-              label="Uptime"
-              field="uptime_seconds"
-              sortKey={sortKey}
-              sortAsc={sortAsc}
-              onSort={handleSort}
-            />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-800 bg-gray-950">
-          {sorted.map((c) => (
-            <>
-              <tr
-                key={c.container_id}
-                className="cursor-pointer hover:bg-gray-900"
-                onClick={() => setExpandedId(expandedId === c.container_id ? null : c.container_id)}
-              >
-                <td className="px-4 py-3 text-sm text-white">{c.name}</td>
-                <td className="px-4 py-3 text-sm text-gray-300 font-mono">{c.image}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={c.status} />
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-400">{c.agent_name}</td>
-                <td className="px-4 py-3 text-sm text-gray-400">
-                  {formatUptime(c.uptime_seconds)}
-                </td>
-              </tr>
-              {expandedId === c.container_id && (
-                <tr key={`${c.container_id}-detail`}>
-                  <td colSpan={5} className="bg-gray-900 px-4 py-4">
-                    <ContainerDetail container={c} />
+    <>
+      {/* Mobile card view */}
+      <div className="space-y-3 sm:hidden">
+        {sorted.map((c) => (
+          <div key={c.container_id}>
+            <button
+              className="w-full rounded-lg border border-gray-800 bg-gray-900 p-4 text-left transition hover:border-gray-700"
+              onClick={() => setExpandedId(expandedId === c.container_id ? null : c.container_id)}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-white truncate">{c.name}</span>
+                <StatusBadge status={c.status} />
+              </div>
+              <p className="mt-1 truncate font-mono text-xs text-gray-400">{c.image}</p>
+              <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
+                <span>{c.agent_name}</span>
+                <span>{formatUptime(c.uptime_seconds)}</span>
+              </div>
+            </button>
+            {expandedId === c.container_id && (
+              <div className="rounded-b-lg border border-t-0 border-gray-800 bg-gray-900 px-4 py-4">
+                <ContainerDetail container={c} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-800 sm:block">
+        <table className="w-full">
+          <thead className="bg-gray-900">
+            <tr>
+              <SortHeader label="Name" field="name" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
+              <SortHeader label="Image" field="image" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
+              <SortHeader label="Status" field="status" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
+              <SortHeader label="Node" field="agent_name" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
+              <SortHeader label="Uptime" field="uptime_seconds" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800 bg-gray-950">
+            {sorted.map((c) => (
+              <>
+                <tr
+                  key={c.container_id}
+                  className="cursor-pointer hover:bg-gray-900"
+                  onClick={() => setExpandedId(expandedId === c.container_id ? null : c.container_id)}
+                >
+                  <td className="px-4 py-3 text-sm text-white">{c.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-300 font-mono">{c.image}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={c.status} />
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-400">{c.agent_name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-400">
+                    {formatUptime(c.uptime_seconds)}
                   </td>
                 </tr>
-              )}
-            </>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                {expandedId === c.container_id && (
+                  <tr key={`${c.container_id}-detail`}>
+                    <td colSpan={5} className="bg-gray-900 px-4 py-4">
+                      <ContainerDetail container={c} />
+                    </td>
+                  </tr>
+                )}
+              </>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
 

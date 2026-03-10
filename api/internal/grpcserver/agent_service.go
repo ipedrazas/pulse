@@ -261,6 +261,20 @@ func commandToProto(cmd repository.Command) (*pulsev1.ServerCommand, error) {
 	return sc, nil
 }
 
+// SendCommand sends a command to a connected agent, used by the REST handler.
+func (s *AgentService) SendCommand(nodeName string, cmdID string, cmdType string, payload json.RawMessage) error {
+	cmd := repository.Command{
+		ID:      cmdID,
+		Type:    cmdType,
+		Payload: payload,
+	}
+	serverCmd, err := commandToProto(cmd)
+	if err != nil {
+		return err
+	}
+	return s.SendToAgent(nodeName, serverCmd)
+}
+
 // StreamRegistry tracks active agent streams by node name.
 type StreamRegistry struct {
 	mu      sync.RWMutex

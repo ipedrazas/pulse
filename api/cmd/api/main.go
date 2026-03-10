@@ -79,7 +79,7 @@ func main() {
 	router.Use(rest.CORSMiddleware())
 	router.Use(rest.LoggingMiddleware())
 
-	handler := rest.NewHandler(repo)
+	handler := rest.NewHandler(repo, agentSvc)
 	handler.Register(router)
 
 	go func() {
