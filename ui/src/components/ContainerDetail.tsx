@@ -44,6 +44,7 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
   }
 
   const isRunning = container.status.toLowerCase() === 'running'
+  const isCompose = !!container.labels?.['com.docker.compose.project']
 
   return (
     <div>
@@ -117,7 +118,7 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
               onClick={() => runAction('stop', () => stopContainer(container.container_id))}
             />
             <ActionButton
-              label="Restart"
+              label={isCompose ? 'Redeploy Stack' : 'Restart'}
               state={actionState.restart}
               variant="warning"
               onClick={() => runAction('restart', () => restartContainer(container.container_id))}
@@ -125,7 +126,7 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
           </>
         )}
         <ActionButton
-          label="Pull Image"
+          label={isCompose ? 'Pull & Redeploy' : 'Pull Image'}
           state={actionState.pull}
           onClick={() => runAction('pull', () => pullContainerImage(container.container_id))}
         />

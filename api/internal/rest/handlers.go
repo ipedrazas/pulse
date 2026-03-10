@@ -215,23 +215,11 @@ func (h *Handler) getCommand(c *gin.Context) {
 	})
 }
 
-// sendContainerCommand looks up the container, creates a command, sends it to the agent, and returns 202.
-func (h *Handler) sendContainerCommand(c *gin.Context, cmdType string, payload json.RawMessage) {
-	containerID := c.Param("id")
-
-	container, err := h.repo.GetContainer(c.Request.Context(), containerID, "")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if container == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
-		return
-	}
-
+// sendAgentCommand creates a command for the given agent, sends it immediately if possible, and returns 202.
+func (h *Handler) sendAgentCommand(c *gin.Context, agentName, cmdType string, payload json.RawMessage) {
 	cmd := repository.Command{
 		ID:        uuid.New().String(),
-		AgentName: container.AgentName,
+		AgentName: agentName,
 		Type:      cmdType,
 		Payload:   payload,
 		Status:    "pending",
@@ -242,8 +230,8 @@ func (h *Handler) sendContainerCommand(c *gin.Context, cmdType string, payload j
 	}
 
 	if h.sender != nil {
-		if err := h.sender.SendCommand(container.AgentName, cmd.ID, cmd.Type, payload); err != nil {
-			slog.Info("agent not connected, command queued", "node", container.AgentName, "id", cmd.ID)
+		if err := h.sender.SendCommand(agentName, cmd.ID, cmd.Type, payload); err != nil {
+			slog.Info("agent not connected, command queued", "node", agentName, "id", cmd.ID)
 		}
 	}
 
@@ -253,8 +241,26 @@ func (h *Handler) sendContainerCommand(c *gin.Context, cmdType string, payload j
 	})
 }
 
-func (h *Handler) requestContainerLogs(c *gin.Context) {
+// getContainerOrFail looks up the container by the :id param, returning nil and writing an error response on failure.
+func (h *Handler) getContainerOrFail(c *gin.Context) *repository.Container {
 	containerID := c.Param("id")
+	container, err := h.repo.GetContainer(c.Request.Context(), containerID, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return nil
+	}
+	if container == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+		return nil
+	}
+	return container
+}
+
+func (h *Handler) requestContainerLogs(c *gin.Context) {
+	container := h.getContainerOrFail(c)
+	if container == nil {
+		return
+	}
 
 	var req struct {
 		Tail int `json:"tail"`
@@ -265,46 +271,74 @@ func (h *Handler) requestContainerLogs(c *gin.Context) {
 	}
 
 	payload, _ := json.Marshal(map[string]any{
-		"container_id": containerID,
+		"container_id": container.ContainerID,
 		"tail":         req.Tail,
 		"follow":       false,
 	})
-	h.sendContainerCommand(c, "request_logs", payload)
+	h.sendAgentCommand(c, container.AgentName, "request_logs", payload)
 }
 
 func (h *Handler) stopContainer(c *gin.Context) {
-	containerID := c.Param("id")
+	container := h.getContainerOrFail(c)
+	if container == nil {
+		return
+	}
 	payload, _ := json.Marshal(map[string]any{
-		"container_id":    containerID,
+		"container_id":    container.ContainerID,
 		"timeout_seconds": 10,
 	})
-	h.sendContainerCommand(c, "stop_container", payload)
+	h.sendAgentCommand(c, container.AgentName, "stop_container", payload)
 }
 
 func (h *Handler) restartContainer(c *gin.Context) {
-	containerID := c.Param("id")
+	container := h.getContainerOrFail(c)
+	if container == nil {
+		return
+	}
+
+	// Compose containers: docker compose up -d --pull=always
+	if isComposeContainer(container) {
+		payload, _ := json.Marshal(composePayload(container))
+		h.sendAgentCommand(c, container.AgentName, "compose_up", payload)
+		return
+	}
+
 	payload, _ := json.Marshal(map[string]any{
-		"container_id":    containerID,
+		"container_id":    container.ContainerID,
 		"timeout_seconds": 10,
 	})
-	h.sendContainerCommand(c, "restart_container", payload)
+	h.sendAgentCommand(c, container.AgentName, "restart_container", payload)
 }
 
 func (h *Handler) pullContainerImage(c *gin.Context) {
-	containerID := c.Param("id")
-
-	container, err := h.repo.GetContainer(c.Request.Context(), containerID, "")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	container := h.getContainerOrFail(c)
+	if container == nil {
 		return
 	}
-	if container == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+
+	// Compose containers: docker compose up -d --pull=always
+	if isComposeContainer(container) {
+		payload, _ := json.Marshal(composePayload(container))
+		h.sendAgentCommand(c, container.AgentName, "compose_up", payload)
 		return
 	}
 
 	payload, _ := json.Marshal(map[string]any{
 		"image": container.Image,
 	})
-	h.sendContainerCommand(c, "pull_image", payload)
+	h.sendAgentCommand(c, container.AgentName, "pull_image", payload)
+}
+
+func isComposeContainer(c *repository.Container) bool {
+	return c.Labels["com.docker.compose.project.working_dir"] != "" &&
+		c.Labels["com.docker.compose.project.config_files"] != ""
+}
+
+func composePayload(c *repository.Container) map[string]any {
+	return map[string]any{
+		"project_dir": c.Labels["com.docker.compose.project.working_dir"],
+		"file":        c.Labels["com.docker.compose.project.config_files"],
+		"detach":      true,
+		"pull":        true,
+	}
 }
