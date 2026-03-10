@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use bollard::Docker;
 use bollard::container::{Config, CreateContainerOptions, StopContainerOptions};
 use bollard::image::CreateImageOptions;
 use futures_util::StreamExt;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::proto::pulse::v1::{
     CommandResult, RequestLogs, RestartContainer, RunContainer, ServerCommand, StopContainer,
@@ -15,12 +16,40 @@ use bollard::container::LogsOptions;
 pub struct Executor {
     docker: Docker,
     node_name: String,
+    docker_cli: PathBuf,
+}
+
+/// Resolve the docker CLI binary path, checking common locations
+/// when it's not found on PATH (e.g. when running as a systemd service).
+fn find_docker_cli() -> PathBuf {
+    // Try PATH first
+    if let Ok(output) = std::process::Command::new("which").arg("docker").output() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if output.status.success() && !path.is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+    // Common locations
+    for candidate in ["/usr/bin/docker", "/usr/local/bin/docker"] {
+        if std::path::Path::new(candidate).exists() {
+            return PathBuf::from(candidate);
+        }
+    }
+    // Fallback — will fail at exec time with a clear error
+    warn!("docker CLI not found on PATH or common locations, falling back to 'docker'");
+    PathBuf::from("docker")
 }
 
 impl Executor {
     pub fn new(node_name: String) -> Result<Self, bollard::errors::Error> {
         let docker = Docker::connect_with_local_defaults()?;
-        Ok(Self { docker, node_name })
+        let docker_cli = find_docker_cli();
+        info!("docker CLI resolved to {}", docker_cli.display());
+        Ok(Self {
+            docker,
+            node_name,
+            docker_cli,
+        })
     }
 
     pub async fn execute(&self, cmd: &ServerCommand) -> CommandResult {
@@ -244,7 +273,7 @@ impl Executor {
     }
 
     async fn compose_up(&self, cu: &crate::proto::pulse::v1::ComposeUp) -> (bool, String, String) {
-        let mut cmd = tokio::process::Command::new("docker");
+        let mut cmd = tokio::process::Command::new(&self.docker_cli);
         cmd.arg("compose");
 
         if !cu.file.is_empty() {
