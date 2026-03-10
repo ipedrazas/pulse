@@ -257,6 +257,12 @@ func commandToProto(cmd repository.Command) (*pulsev1.ServerCommand, error) {
 			return nil, err
 		}
 		sc.Payload = &pulsev1.ServerCommand_RequestLogs{RequestLogs: &rl}
+	case "restart_container":
+		var rc pulsev1.RestartContainer
+		if err := json.Unmarshal(cmd.Payload, &rc); err != nil {
+			return nil, err
+		}
+		sc.Payload = &pulsev1.ServerCommand_RestartContainer{RestartContainer: &rc}
 	}
 	return sc, nil
 }

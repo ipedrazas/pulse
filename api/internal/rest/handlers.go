@@ -37,6 +37,9 @@ func (h *Handler) Register(r *gin.Engine) {
 	api.GET("/containers", h.listContainers)
 	api.GET("/containers/:id", h.getContainer)
 	api.POST("/containers/:id/logs", h.requestContainerLogs)
+	api.POST("/containers/:id/stop", h.stopContainer)
+	api.POST("/containers/:id/restart", h.restartContainer)
+	api.POST("/containers/:id/pull", h.pullContainerImage)
 	api.POST("/commands", h.createCommand)
 	api.GET("/commands/:id", h.getCommand)
 }
@@ -212,7 +215,8 @@ func (h *Handler) getCommand(c *gin.Context) {
 	})
 }
 
-func (h *Handler) requestContainerLogs(c *gin.Context) {
+// sendContainerCommand looks up the container, creates a command, sends it to the agent, and returns 202.
+func (h *Handler) sendContainerCommand(c *gin.Context, cmdType string, payload json.RawMessage) {
 	containerID := c.Param("id")
 
 	container, err := h.repo.GetContainer(c.Request.Context(), containerID, "")
@@ -225,25 +229,10 @@ func (h *Handler) requestContainerLogs(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Tail int `json:"tail"`
-	}
-	// Ignore bind errors; tail defaults to 0 (all lines)
-	_ = c.ShouldBindJSON(&req)
-	if req.Tail <= 0 {
-		req.Tail = 100
-	}
-
-	payload, _ := json.Marshal(map[string]any{
-		"container_id": containerID,
-		"tail":         req.Tail,
-		"follow":       false,
-	})
-
 	cmd := repository.Command{
 		ID:        uuid.New().String(),
 		AgentName: container.AgentName,
-		Type:      "request_logs",
+		Type:      cmdType,
 		Payload:   payload,
 		Status:    "pending",
 	}
@@ -262,4 +251,60 @@ func (h *Handler) requestContainerLogs(c *gin.Context) {
 		"command_id": cmd.ID,
 		"status":     "pending",
 	})
+}
+
+func (h *Handler) requestContainerLogs(c *gin.Context) {
+	containerID := c.Param("id")
+
+	var req struct {
+		Tail int `json:"tail"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	if req.Tail <= 0 {
+		req.Tail = 100
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"container_id": containerID,
+		"tail":         req.Tail,
+		"follow":       false,
+	})
+	h.sendContainerCommand(c, "request_logs", payload)
+}
+
+func (h *Handler) stopContainer(c *gin.Context) {
+	containerID := c.Param("id")
+	payload, _ := json.Marshal(map[string]any{
+		"container_id":    containerID,
+		"timeout_seconds": 10,
+	})
+	h.sendContainerCommand(c, "stop_container", payload)
+}
+
+func (h *Handler) restartContainer(c *gin.Context) {
+	containerID := c.Param("id")
+	payload, _ := json.Marshal(map[string]any{
+		"container_id":    containerID,
+		"timeout_seconds": 10,
+	})
+	h.sendContainerCommand(c, "restart_container", payload)
+}
+
+func (h *Handler) pullContainerImage(c *gin.Context) {
+	containerID := c.Param("id")
+
+	container, err := h.repo.GetContainer(c.Request.Context(), containerID, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if container == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"image": container.Image,
+	})
+	h.sendContainerCommand(c, "pull_image", payload)
 }

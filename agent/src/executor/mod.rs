@@ -7,7 +7,8 @@ use futures_util::StreamExt;
 use tracing::{error, info};
 
 use crate::proto::pulse::v1::{
-    CommandResult, RequestLogs, RunContainer, ServerCommand, StopContainer, server_command,
+    CommandResult, RequestLogs, RestartContainer, RunContainer, ServerCommand, StopContainer,
+    server_command,
 };
 use bollard::container::LogsOptions;
 
@@ -32,6 +33,9 @@ impl Executor {
             Some(server_command::Payload::PullImage(pi)) => self.pull_image(&pi.image).await,
             Some(server_command::Payload::ComposeUp(cu)) => self.compose_up(cu).await,
             Some(server_command::Payload::RequestLogs(rl)) => self.request_logs(rl).await,
+            Some(server_command::Payload::RestartContainer(rc)) => {
+                self.restart_container(rc).await
+            }
             _ => (false, String::new(), "unsupported command".to_string()),
         };
 
@@ -150,6 +154,32 @@ impl Executor {
             }
             Err(e) => {
                 error!("failed to stop container: {}", e);
+                (false, String::new(), e.to_string())
+            }
+        }
+    }
+
+    async fn restart_container(&self, rc: &RestartContainer) -> (bool, String, String) {
+        let timeout = if rc.timeout_seconds > 0 {
+            rc.timeout_seconds
+        } else {
+            10
+        };
+
+        let options = bollard::container::RestartContainerOptions {
+            t: timeout as isize,
+        };
+        match self
+            .docker
+            .restart_container(&rc.container_id, Some(options))
+            .await
+        {
+            Ok(_) => {
+                info!("restarted container {}", rc.container_id);
+                (true, format!("restarted {}", rc.container_id), String::new())
+            }
+            Err(e) => {
+                error!("failed to restart container: {}", e);
                 (false, String::new(), e.to_string())
             }
         }

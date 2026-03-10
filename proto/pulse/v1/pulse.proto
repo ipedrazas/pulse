@@ -106,6 +106,7 @@ message ServerCommand {
     ComposeUp compose_up = 5;
     SendFile send_file = 6;
     RequestLogs request_logs = 7;
+    RestartContainer restart_container = 8;
   }
 }
 
@@ -126,6 +127,11 @@ message StopContainer {
 
 message PullImage {
   string image = 1;
+}
+
+message RestartContainer {
+  string container_id = 1;
+  int32 timeout_seconds = 2;  // grace period before SIGKILL
 }
 
 message ComposeUp {
@@ -228,6 +234,7 @@ message SendCommandRequest {
     ComposeUp compose_up = 5;
     SendFile send_file = 6;
     RequestLogs request_logs = 7;
+    RestartContainer restart_container = 8;
   }
 }
 

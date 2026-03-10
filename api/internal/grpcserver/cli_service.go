@@ -203,6 +203,9 @@ func marshalCommand(req *pulsev1.SendCommandRequest) (string, []byte, error) {
 	case *pulsev1.SendCommandRequest_RequestLogs:
 		data, err := json.Marshal(cmd.RequestLogs)
 		return "request_logs", data, err
+	case *pulsev1.SendCommandRequest_RestartContainer:
+		data, err := json.Marshal(cmd.RestartContainer)
+		return "restart_container", data, err
 	default:
 		return "", nil, status.Errorf(codes.InvalidArgument, "unknown command type")
 	}

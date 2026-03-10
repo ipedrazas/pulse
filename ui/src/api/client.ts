@@ -64,3 +64,26 @@ export async function requestContainerLogs(
 export async function getCommandResult(commandId: string): Promise<CommandResponse> {
   return fetchJSON<CommandResponse>(`${BASE}/commands/${encodeURIComponent(commandId)}`)
 }
+
+async function postContainerAction(containerId: string, action: string): Promise<CommandResponse> {
+  const res = await fetch(`${BASE}/containers/${encodeURIComponent(containerId)}/${action}`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`${res.status}: ${body}`)
+  }
+  return res.json() as Promise<CommandResponse>
+}
+
+export function stopContainer(containerId: string): Promise<CommandResponse> {
+  return postContainerAction(containerId, 'stop')
+}
+
+export function restartContainer(containerId: string): Promise<CommandResponse> {
+  return postContainerAction(containerId, 'restart')
+}
+
+export function pullContainerImage(containerId: string): Promise<CommandResponse> {
+  return postContainerAction(containerId, 'pull')
+}
