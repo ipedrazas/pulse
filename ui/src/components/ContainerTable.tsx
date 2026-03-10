@@ -83,11 +83,41 @@ export function ContainerTable({ containers, search }: ContainerTableProps) {
         <table className="w-full">
           <thead className="bg-gray-900">
             <tr>
-              <SortHeader label="Name" field="name" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
-              <SortHeader label="Image" field="image" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
-              <SortHeader label="Status" field="status" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
-              <SortHeader label="Node" field="agent_name" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
-              <SortHeader label="Uptime" field="uptime_seconds" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} />
+              <SortHeader
+                label="Name"
+                field="name"
+                sortKey={sortKey}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="Image"
+                field="image"
+                sortKey={sortKey}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="Status"
+                field="status"
+                sortKey={sortKey}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="Node"
+                field="agent_name"
+                sortKey={sortKey}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="Uptime"
+                field="uptime_seconds"
+                sortKey={sortKey}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800 bg-gray-950">
@@ -96,7 +126,9 @@ export function ContainerTable({ containers, search }: ContainerTableProps) {
                 <tr
                   key={c.container_id}
                   className="cursor-pointer hover:bg-gray-900"
-                  onClick={() => setExpandedId(expandedId === c.container_id ? null : c.container_id)}
+                  onClick={() =>
+                    setExpandedId(expandedId === c.container_id ? null : c.container_id)
+                  }
                 >
                   <td className="px-4 py-3 text-sm text-white">{c.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-300 font-mono">{c.image}</td>

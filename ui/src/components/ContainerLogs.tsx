@@ -67,20 +67,13 @@ export function ContainerLogs({ containerId, onClose }: ContainerLogsProps) {
   return (
     <div className="mt-4 rounded-lg border border-gray-700 bg-gray-950">
       <div className="flex items-center justify-between border-b border-gray-700 px-4 py-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-          Logs
-        </h4>
-        <button
-          onClick={onClose}
-          className="text-xs text-gray-500 hover:text-white"
-        >
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Logs</h4>
+        <button onClick={onClose} className="text-xs text-gray-500 hover:text-white">
           Close
         </button>
       </div>
       <div className="max-h-80 overflow-auto p-4 sm:max-h-96">
-        {loading && (
-          <p className="text-sm text-gray-500 animate-pulse">Loading logs...</p>
-        )}
+        {loading && <p className="text-sm text-gray-500 animate-pulse">Loading logs...</p>}
         {error && <p className="text-sm text-red-400">{error}</p>}
         {!loading && !error && lines.length > 0 && (
           <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-gray-300">

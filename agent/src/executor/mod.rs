@@ -33,9 +33,7 @@ impl Executor {
             Some(server_command::Payload::PullImage(pi)) => self.pull_image(&pi.image).await,
             Some(server_command::Payload::ComposeUp(cu)) => self.compose_up(cu).await,
             Some(server_command::Payload::RequestLogs(rl)) => self.request_logs(rl).await,
-            Some(server_command::Payload::RestartContainer(rc)) => {
-                self.restart_container(rc).await
-            }
+            Some(server_command::Payload::RestartContainer(rc)) => self.restart_container(rc).await,
             _ => (false, String::new(), "unsupported command".to_string()),
         };
 
@@ -176,7 +174,11 @@ impl Executor {
         {
             Ok(_) => {
                 info!("restarted container {}", rc.container_id);
-                (true, format!("restarted {}", rc.container_id), String::new())
+                (
+                    true,
+                    format!("restarted {}", rc.container_id),
+                    String::new(),
+                )
             }
             Err(e) => {
                 error!("failed to restart container: {}", e);

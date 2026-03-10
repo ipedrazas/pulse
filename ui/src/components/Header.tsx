@@ -17,7 +17,9 @@ export function Header({ healthy }: HeaderProps) {
           <span
             className={`inline-block h-2 w-2 rounded-full ${healthy ? 'bg-green-400' : 'bg-red-400'}`}
           />
-          <span className="hidden text-gray-400 sm:inline">{healthy ? 'API Connected' : 'API Disconnected'}</span>
+          <span className="hidden text-gray-400 sm:inline">
+            {healthy ? 'API Connected' : 'API Disconnected'}
+          </span>
         </div>
       </div>
     </header>
