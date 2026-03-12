@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-03-12
+
+### Added
+
+- Agent rewritten in Rust (tonic gRPC + bollard Docker)
+- CLI component (`cli/`) using Go/Cobra for cluster management
+- React UI dashboard (`ui/`) with Vite + Tailwind CSS
+- Node metadata display in UI
+- Container logs viewer in UI
+- Container actions (start, pull, stop) in UI
+- Remove nodes API endpoint
+- Version info added to all components (API, Agent, CLI, UI)
+- Project logo
+- Integration tests for the new architecture
+
+### Fixed
+
+- Docker invocation from systemd service files
+- Compose stack pull and restart handling
+- gRPC connection deadlock
+- Agent version string parsing
+- CLI pull command bug
+- CLI log fetching bug
+- Release workflow
+- CI pipeline failures
+
 ## [0.1.0] - 2026-03-01
 
 ### Added

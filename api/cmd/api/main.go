@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -82,9 +83,13 @@ func main() {
 	handler := rest.NewHandler(repo, agentSvc)
 	handler.Register(router)
 
+	httpSrv := &http.Server{
+		Addr:    cfg.RESTAddr,
+		Handler: router,
+	}
 	go func() {
 		slog.Info("REST server listening", "addr", cfg.RESTAddr)
-		if err := router.Run(cfg.RESTAddr); err != nil {
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("rest serve failed", "error", err)
 		}
 	}()
@@ -108,8 +113,30 @@ func main() {
 		}
 	}()
 
-	// Wait for shutdown
+	// Wait for shutdown signal
 	<-ctx.Done()
 	slog.Info("shutting down")
-	grpcSrv.GracefulStop()
+
+	// Give in-flight requests up to 15 seconds to complete
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("rest shutdown error", "error", err)
+	}
+
+	// GracefulStop waits for active RPCs; force-stop after the deadline
+	stopped := make(chan struct{})
+	go func() {
+		grpcSrv.GracefulStop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-shutdownCtx.Done():
+		slog.Warn("grpc graceful stop timed out, forcing stop")
+		grpcSrv.Stop()
+	}
+
+	slog.Info("shutdown complete")
 }
