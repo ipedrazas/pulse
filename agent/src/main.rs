@@ -14,6 +14,7 @@ mod redact;
 mod sysinfo;
 
 use proto::pulse::v1::{AgentMessage, Heartbeat, agent_message};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -38,10 +39,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut poller = docker::DockerPoller::new(cfg.node_name.clone(), cfg.redact_patterns.clone())?;
     let exec = executor::Executor::new(cfg.node_name.clone())?;
 
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigint = signal(SignalKind::interrupt())?;
+
     // Main reconnection loop
     loop {
         info!("connecting to API at {}", cfg.api_addr);
-        let mut client = grpc::connect_with_backoff(&cfg.api_addr).await;
+
+        // Wait for connection, but honour shutdown signals during backoff
+        let mut client = tokio::select! {
+            c = grpc::connect_with_backoff(&cfg.api_addr) => c,
+            _ = sigterm.recv() => {
+                info!("SIGTERM received during connect, shutting down");
+                break;
+            }
+            _ = sigint.recv() => {
+                info!("SIGINT received during connect, shutting down");
+                break;
+            }
+        };
 
         match grpc::establish_stream(&mut client).await {
             Ok((outbound_tx, inbound)) => {
@@ -70,8 +86,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let mut poll_interval = tokio::time::interval(cfg.poll_interval);
                 let mut stream_broken = false;
+                let mut shutdown = false;
 
-                while !stream_broken {
+                while !stream_broken && !shutdown {
                     tokio::select! {
                         _ = poll_interval.tick() => {
                             // Send heartbeat (no metadata — sent once on connect)
@@ -113,10 +130,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 stream_broken = true;
                             }
                         }
+
+                        _ = sigterm.recv() => {
+                            info!("SIGTERM received, shutting down");
+                            shutdown = true;
+                        }
+                        _ = sigint.recv() => {
+                            info!("SIGINT received, shutting down");
+                            shutdown = true;
+                        }
                     }
                 }
 
                 stream_handle.abort();
+                if shutdown {
+                    // Drop the outbound sender to close the gRPC stream cleanly
+                    drop(outbound_tx);
+                    info!("shutdown complete");
+                    return Ok(());
+                }
                 warn!("stream broken, reconnecting...");
             }
             Err(e) => {
@@ -124,7 +156,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Brief pause before reconnecting
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // Brief pause before reconnecting, but honour shutdown signals
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
+            _ = sigterm.recv() => {
+                info!("SIGTERM received, shutting down");
+                break;
+            }
+            _ = sigint.recv() => {
+                info!("SIGINT received, shutting down");
+                break;
+            }
+        }
     }
+
+    info!("shutdown complete");
+    Ok(())
 }
