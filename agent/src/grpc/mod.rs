@@ -43,26 +43,54 @@ pub async fn establish_stream(
     Ok((tx, inbound))
 }
 
-/// Runs the main stream loop: sends messages from outbound channel,
-/// receives commands and forwards them to the command handler.
+/// How long to wait for a message before treating the stream as stale.
+/// This must be longer than the heartbeat/poll interval so idle periods
+/// (no commands from server) don't trigger a false timeout.
+const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Timeout for sending a message on the outbound channel.
+const SEND_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Sends an AgentMessage on the outbound channel with a timeout.
+/// Returns `true` on success, `false` if the send timed out or the channel closed.
+pub async fn send_msg(tx: &mpsc::Sender<AgentMessage>, msg: AgentMessage) -> bool {
+    match tokio::time::timeout(SEND_TIMEOUT, tx.send(msg)).await {
+        Ok(Ok(())) => true,
+        Ok(Err(e)) => {
+            error!("outbound channel closed: {}", e);
+            false
+        }
+        Err(_) => {
+            error!("outbound send timed out after {:?}", SEND_TIMEOUT);
+            false
+        }
+    }
+}
+
+/// Runs the inbound stream loop, forwarding commands to the command handler.
+/// Breaks on stream close, error, or if no message arrives within the read timeout.
 pub async fn stream_loop(
     mut inbound: tonic::Streaming<ServerCommand>,
     cmd_tx: mpsc::Sender<ServerCommand>,
 ) {
     loop {
-        match inbound.message().await {
-            Ok(Some(cmd)) => {
+        match tokio::time::timeout(STREAM_READ_TIMEOUT, inbound.message()).await {
+            Ok(Ok(Some(cmd))) => {
                 info!("received command: {}", cmd.command_id);
                 if let Err(e) = cmd_tx.send(cmd).await {
                     error!("failed to forward command: {}", e);
                 }
             }
-            Ok(None) => {
+            Ok(Ok(None)) => {
                 info!("stream closed by server");
                 break;
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 error!("stream error: {}", e);
+                break;
+            }
+            Err(_) => {
+                warn!("no message received in {:?}, treating stream as stale", STREAM_READ_TIMEOUT);
                 break;
             }
         }

@@ -13,6 +13,8 @@ mod grpc;
 mod redact;
 mod sysinfo;
 
+use std::sync::Arc;
+
 use proto::pulse::v1::{AgentMessage, Heartbeat, agent_message};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
@@ -37,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut poller = docker::DockerPoller::new(cfg.node_name.clone(), cfg.redact_patterns.clone())?;
-    let exec = executor::Executor::new(cfg.node_name.clone())?;
+    let exec = Arc::new(executor::Executor::new(cfg.node_name.clone())?);
 
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
@@ -73,8 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         metadata: Some(metadata),
                     })),
                 };
-                if let Err(e) = outbound_tx.send(initial_heartbeat).await {
-                    error!("failed to send initial heartbeat: {}", e);
+                if !grpc::send_msg(&outbound_tx, initial_heartbeat).await {
                     continue;
                 }
 
@@ -100,8 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     metadata: None,
                                 })),
                             };
-                            if let Err(e) = outbound_tx.send(heartbeat).await {
-                                error!("failed to send heartbeat: {}", e);
+                            if !grpc::send_msg(&outbound_tx, heartbeat).await {
                                 stream_broken = true;
                                 continue;
                             }
@@ -111,24 +111,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let msg = AgentMessage {
                                     payload: Some(agent_message::Payload::ContainerReport(report)),
                                 };
-                                if let Err(e) = outbound_tx.send(msg).await {
-                                    error!("failed to send report: {}", e);
+                                if !grpc::send_msg(&outbound_tx, msg).await {
                                     stream_broken = true;
                                 }
                             }
                         }
 
                         Some(cmd) = cmd_rx.recv() => {
-                            info!("executing command {}", cmd.command_id);
-                            let result = exec.execute(&cmd).await;
-
-                            let msg = AgentMessage {
-                                payload: Some(agent_message::Payload::CommandResult(result)),
-                            };
-                            if let Err(e) = outbound_tx.send(msg).await {
-                                error!("failed to send command result: {}", e);
-                                stream_broken = true;
-                            }
+                            let exec = Arc::clone(&exec);
+                            let tx = outbound_tx.clone();
+                            tokio::spawn(async move {
+                                info!("executing command {}", cmd.command_id);
+                                let result = exec.execute(&cmd).await;
+                                let msg = AgentMessage {
+                                    payload: Some(agent_message::Payload::CommandResult(result)),
+                                };
+                                grpc::send_msg(&tx, msg).await;
+                            });
                         }
 
                         _ = sigterm.recv() => {
