@@ -236,11 +236,7 @@ async fn test_poller_detects_state_change() {
     // Wait for Docker to fully update the container state
     for _ in 0..10 {
         let info = docker.inspect_container(&id, None).await.unwrap();
-        let running = info
-            .state
-            .as_ref()
-            .and_then(|s| s.running)
-            .unwrap_or(false);
+        let running = info.state.as_ref().and_then(|s| s.running).unwrap_or(false);
         if !running {
             break;
         }
