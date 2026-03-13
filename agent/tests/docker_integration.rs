@@ -233,6 +233,20 @@ async fn test_poller_detects_state_change() {
         .await
         .unwrap();
 
+    // Wait for Docker to fully update the container state
+    for _ in 0..10 {
+        let info = docker.inspect_container(&id, None).await.unwrap();
+        let running = info
+            .state
+            .as_ref()
+            .and_then(|s| s.running)
+            .unwrap_or(false);
+        if !running {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
     // Next poll should detect the change
     let changed = poller.poll().await;
     assert!(
