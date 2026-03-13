@@ -248,6 +248,57 @@ func TestVerboseFlag_Accepted(t *testing.T) {
 	}
 }
 
+// --- send: file error ---
+
+func TestSendCmd_NonexistentFile(t *testing.T) {
+	_, _, err := executeCmd("send", "--node", "n1", "--file", "/nonexistent/path/file.txt")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("read file")) {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// --- run: multiple invalid flags ---
+
+func TestRunCmd_InvalidPortNonNumericHost(t *testing.T) {
+	_, _, err := executeCmd("run", "--node", "n1", "--image", "nginx", "-p", "abc:80")
+	if err == nil {
+		t.Fatal("expected error for non-numeric host port")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("invalid port mapping")) {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCmd_EmptyEnvKey(t *testing.T) {
+	_, _, err := executeCmd("run", "--node", "n1", "--image", "nginx", "-e", "=value")
+	if err == nil {
+		t.Fatal("expected error for empty env key")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("invalid env var")) {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// --- subcommand structure ---
+
+func TestNodesLsCmd_IsRegistered(t *testing.T) {
+	root := NewRootCmd()
+	nodesCmd, _, _ := root.Find([]string{"nodes", "ls"})
+	if nodesCmd == nil || nodesCmd.Name() != "ls" {
+		t.Fatal("nodes ls subcommand not found")
+	}
+}
+
+func TestUnknownSubcommand(t *testing.T) {
+	_, _, err := executeCmd("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown subcommand")
+	}
+}
+
 // --- global flags ---
 
 func TestOutputFlag_Default(t *testing.T) {
@@ -258,5 +309,16 @@ func TestOutputFlag_Default(t *testing.T) {
 
 	if output != "table" {
 		t.Errorf("default output = %q, want table", output)
+	}
+}
+
+func TestOutputFlag_Json(t *testing.T) {
+	root := NewRootCmd()
+	root.SetArgs([]string{"-o", "json", "version"})
+	root.SetOut(&bytes.Buffer{})
+	_ = root.Execute()
+
+	if output != "json" {
+		t.Errorf("output = %q, want json", output)
 	}
 }
