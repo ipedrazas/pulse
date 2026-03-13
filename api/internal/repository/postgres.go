@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -49,7 +50,11 @@ func (r *PostgresRepository) WithTx(ctx context.Context, fn func(Repository) err
 func (r *PostgresRepository) UpsertAgent(ctx context.Context, a Agent) error {
 	var metadataJSON []byte
 	if a.Metadata != nil {
-		metadataJSON, _ = json.Marshal(a.Metadata)
+		var err error
+		metadataJSON, err = json.Marshal(a.Metadata)
+		if err != nil {
+			return fmt.Errorf("marshal agent metadata: %w", err)
+		}
 	}
 	_, err := r.q.Exec(ctx, `
 		INSERT INTO agents (name, status, version, last_seen, metadata)
@@ -78,7 +83,9 @@ func (r *PostgresRepository) GetAgent(ctx context.Context, name string) (*Agent,
 	}
 	if len(metadataJSON) > 0 {
 		var m NodeMetadata
-		json.Unmarshal(metadataJSON, &m)
+		if err := json.Unmarshal(metadataJSON, &m); err != nil {
+			return nil, fmt.Errorf("unmarshal agent metadata: %w", err)
+		}
 		a.Metadata = &m
 	}
 	return &a, nil
@@ -102,7 +109,9 @@ func (r *PostgresRepository) ListAgents(ctx context.Context) ([]Agent, error) {
 		}
 		if len(metadataJSON) > 0 {
 			var m NodeMetadata
-			json.Unmarshal(metadataJSON, &m)
+			if err := json.Unmarshal(metadataJSON, &m); err != nil {
+				return nil, fmt.Errorf("unmarshal agent metadata: %w", err)
+			}
 			a.Metadata = &m
 		}
 		agents = append(agents, a)
@@ -140,12 +149,24 @@ func (r *PostgresRepository) MarkStaleAgents(ctx context.Context, threshold time
 // --- Containers ---
 
 func (r *PostgresRepository) UpsertContainer(ctx context.Context, c Container) error {
-	envJSON, _ := json.Marshal(c.EnvVars)
-	mountsJSON, _ := json.Marshal(c.Mounts)
-	labelsJSON, _ := json.Marshal(c.Labels)
-	portsJSON, _ := json.Marshal(c.Ports)
+	envJSON, err := json.Marshal(c.EnvVars)
+	if err != nil {
+		return fmt.Errorf("marshal env_vars: %w", err)
+	}
+	mountsJSON, err := json.Marshal(c.Mounts)
+	if err != nil {
+		return fmt.Errorf("marshal mounts: %w", err)
+	}
+	labelsJSON, err := json.Marshal(c.Labels)
+	if err != nil {
+		return fmt.Errorf("marshal labels: %w", err)
+	}
+	portsJSON, err := json.Marshal(c.Ports)
+	if err != nil {
+		return fmt.Errorf("marshal ports: %w", err)
+	}
 
-	_, err := r.q.Exec(ctx, `
+	_, err = r.q.Exec(ctx, `
 		INSERT INTO containers (container_id, agent_name, name, image, status, env_vars, mounts, labels, ports, compose_project, command, uptime_seconds)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (container_id, agent_name) DO UPDATE SET
@@ -190,10 +211,18 @@ func (r *PostgresRepository) GetContainer(ctx context.Context, containerID, agen
 	if err != nil {
 		return nil, err
 	}
-	json.Unmarshal(envJSON, &c.EnvVars)
-	json.Unmarshal(mountsJSON, &c.Mounts)
-	json.Unmarshal(labelsJSON, &c.Labels)
-	json.Unmarshal(portsJSON, &c.Ports)
+	if err := json.Unmarshal(envJSON, &c.EnvVars); err != nil {
+		return nil, fmt.Errorf("unmarshal env_vars: %w", err)
+	}
+	if err := json.Unmarshal(mountsJSON, &c.Mounts); err != nil {
+		return nil, fmt.Errorf("unmarshal mounts: %w", err)
+	}
+	if err := json.Unmarshal(labelsJSON, &c.Labels); err != nil {
+		return nil, fmt.Errorf("unmarshal labels: %w", err)
+	}
+	if err := json.Unmarshal(portsJSON, &c.Ports); err != nil {
+		return nil, fmt.Errorf("unmarshal ports: %w", err)
+	}
 	return &c, nil
 }
 
@@ -242,10 +271,18 @@ func (r *PostgresRepository) ListContainers(ctx context.Context, agentName strin
 			&c.ComposeProject, &c.Command, &c.UptimeSeconds, &c.CreatedAt, &c.RemovedAt); err != nil {
 			return nil, 0, err
 		}
-		json.Unmarshal(envJSON, &c.EnvVars)
-		json.Unmarshal(mountsJSON, &c.Mounts)
-		json.Unmarshal(labelsJSON, &c.Labels)
-		json.Unmarshal(portsJSON, &c.Ports)
+		if err := json.Unmarshal(envJSON, &c.EnvVars); err != nil {
+			return nil, 0, fmt.Errorf("unmarshal env_vars: %w", err)
+		}
+		if err := json.Unmarshal(mountsJSON, &c.Mounts); err != nil {
+			return nil, 0, fmt.Errorf("unmarshal mounts: %w", err)
+		}
+		if err := json.Unmarshal(labelsJSON, &c.Labels); err != nil {
+			return nil, 0, fmt.Errorf("unmarshal labels: %w", err)
+		}
+		if err := json.Unmarshal(portsJSON, &c.Ports); err != nil {
+			return nil, 0, fmt.Errorf("unmarshal ports: %w", err)
+		}
 		containers = append(containers, c)
 	}
 	return containers, total, rows.Err()

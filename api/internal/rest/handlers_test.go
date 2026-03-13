@@ -197,6 +197,19 @@ func TestListContainers_CustomParams(t *testing.T) {
 	assert.Equal(t, float64(5), body["offset"])
 }
 
+func TestListContainers_PageSizeCapped(t *testing.T) {
+	repo := &mockRepo{total: 0}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/containers?page_size=999999", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, float64(maxPageSize), body["page_size"])
+}
+
 func TestListContainers_RepoError(t *testing.T) {
 	repo := &mockRepo{err: errors.New("fail")}
 	r := setupRouter(repo)

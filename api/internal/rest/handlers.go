@@ -12,6 +12,22 @@ import (
 	"github.com/ipedrazas/pulse/api/internal/version"
 )
 
+const maxPageSize = 200
+
+// apiError is a structured error response returned by all endpoints.
+type apiError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func errResponse(code, message string) gin.H {
+	return gin.H{"error": apiError{Code: code, Message: message}}
+}
+
+func errInternal(msg string) gin.H   { return errResponse("internal_error", msg) }
+func errNotFound(msg string) gin.H   { return errResponse("not_found", msg) }
+func errBadRequest(msg string) gin.H { return errResponse("bad_request", msg) }
+
 // CommandSender can send commands to connected agents.
 type CommandSender interface {
 	SendCommand(nodeName string, cmdID string, cmdType string, payload json.RawMessage) error
@@ -64,7 +80,8 @@ func (h *Handler) info(c *gin.Context) {
 func (h *Handler) listNodes(c *gin.Context) {
 	agents, err := h.repo.ListAgents(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("list agents failed", "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to list nodes"))
 		return
 	}
 
@@ -95,17 +112,19 @@ func (h *Handler) getNode(c *gin.Context) {
 	name := c.Param("name")
 	agent, err := h.repo.GetAgent(c.Request.Context(), name)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("get agent failed", "name", name, "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to get node"))
 		return
 	}
 	if agent == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+		c.JSON(http.StatusNotFound, errNotFound("node not found"))
 		return
 	}
 
 	containers, _, err := h.repo.ListContainers(c.Request.Context(), name, 100, 0)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("list containers for node failed", "name", name, "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to list containers"))
 		return
 	}
 
@@ -118,7 +137,7 @@ func (h *Handler) getNode(c *gin.Context) {
 func (h *Handler) deleteNode(c *gin.Context) {
 	name := c.Param("name")
 	if err := h.repo.DeleteAgent(c.Request.Context(), name); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		c.JSON(http.StatusNotFound, errNotFound("node not found"))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": name})
@@ -132,6 +151,9 @@ func (h *Handler) listContainers(c *gin.Context) {
 			pageSize = n
 		}
 	}
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
+	}
 	offset := 0
 	if v := c.Query("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
@@ -141,7 +163,8 @@ func (h *Handler) listContainers(c *gin.Context) {
 
 	containers, total, err := h.repo.ListContainers(c.Request.Context(), agentName, pageSize, offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("list containers failed", "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to list containers"))
 		return
 	}
 
@@ -157,11 +180,12 @@ func (h *Handler) getContainer(c *gin.Context) {
 	id := c.Param("id")
 	container, err := h.repo.GetContainer(c.Request.Context(), id, "")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("get container failed", "id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to get container"))
 		return
 	}
 	if container == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+		c.JSON(http.StatusNotFound, errNotFound("container not found"))
 		return
 	}
 	c.JSON(http.StatusOK, container)
@@ -174,7 +198,7 @@ func (h *Handler) createCommand(c *gin.Context) {
 		Payload  json.RawMessage `json:"payload"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errBadRequest(err.Error()))
 		return
 	}
 
@@ -186,7 +210,8 @@ func (h *Handler) createCommand(c *gin.Context) {
 		Status:    "pending",
 	}
 	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("create command failed", "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to create command"))
 		return
 	}
 
@@ -206,11 +231,12 @@ func (h *Handler) getCommand(c *gin.Context) {
 	id := c.Param("id")
 	cmd, err := h.repo.GetCommand(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("get command failed", "id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to get command"))
 		return
 	}
 	if cmd == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "command not found"})
+		c.JSON(http.StatusNotFound, errNotFound("command not found"))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -230,7 +256,8 @@ func (h *Handler) sendAgentCommand(c *gin.Context, agentName, cmdType string, pa
 		Status:    "pending",
 	}
 	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("create command failed", "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to create command"))
 		return
 	}
 
@@ -251,11 +278,12 @@ func (h *Handler) getContainerOrFail(c *gin.Context) *repository.Container {
 	containerID := c.Param("id")
 	container, err := h.repo.GetContainer(c.Request.Context(), containerID, "")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("get container failed", "id", containerID, "error", err)
+		c.JSON(http.StatusInternalServerError, errInternal("failed to get container"))
 		return nil
 	}
 	if container == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+		c.JSON(http.StatusNotFound, errNotFound("container not found"))
 		return nil
 	}
 	return container
