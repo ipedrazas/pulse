@@ -45,17 +45,19 @@ func newRunCmd() *cobra.Command {
 			envMap := make(map[string]string)
 			for _, e := range envVars {
 				parts := strings.SplitN(e, "=", 2)
-				if len(parts) == 2 {
-					envMap[parts[0]] = parts[1]
+				if len(parts) != 2 || parts[0] == "" {
+					return fmt.Errorf("invalid env var %q: expected KEY=VALUE format", e)
 				}
+				envMap[parts[0]] = parts[1]
 			}
 
 			var portMappings []*pulsev1.PortMapping
 			for _, p := range ports {
-				pm := parsePort(p)
-				if pm != nil {
-					portMappings = append(portMappings, pm)
+				pm, err := parsePort(p)
+				if err != nil {
+					return fmt.Errorf("invalid port mapping %q: %w", p, err)
 				}
+				portMappings = append(portMappings, pm)
 			}
 
 			resp, err := client.SendCommand(ctx, &pulsev1.SendCommandRequest{
@@ -91,17 +93,21 @@ func newRunCmd() *cobra.Command {
 	return cmd
 }
 
-func parsePort(s string) *pulsev1.PortMapping {
+func parsePort(s string) (*pulsev1.PortMapping, error) {
 	parts := strings.SplitN(s, ":", 2)
 	if len(parts) != 2 {
-		return nil
+		return nil, fmt.Errorf("expected host:container format")
 	}
 	var hostPort, containerPort uint32
-	fmt.Sscanf(parts[0], "%d", &hostPort)
-	fmt.Sscanf(parts[1], "%d", &containerPort)
+	if n, _ := fmt.Sscanf(parts[0], "%d", &hostPort); n != 1 {
+		return nil, fmt.Errorf("invalid host port %q", parts[0])
+	}
+	if n, _ := fmt.Sscanf(parts[1], "%d", &containerPort); n != 1 {
+		return nil, fmt.Errorf("invalid container port %q", parts[1])
+	}
 	return &pulsev1.PortMapping{
 		HostPort:      hostPort,
 		ContainerPort: containerPort,
 		Protocol:      "tcp",
-	}
+	}, nil
 }

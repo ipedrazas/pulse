@@ -62,9 +62,9 @@ func TestFormatUptime_Days(t *testing.T) {
 // --- parsePort ---
 
 func TestParsePort_Valid(t *testing.T) {
-	pm := parsePort("8080:80")
-	if pm == nil {
-		t.Fatal("parsePort returned nil")
+	pm, err := parsePort("8080:80")
+	if err != nil {
+		t.Fatalf("parsePort returned error: %v", err)
 	}
 	if pm.HostPort != 8080 {
 		t.Errorf("HostPort = %d, want 8080", pm.HostPort)
@@ -78,30 +78,23 @@ func TestParsePort_Valid(t *testing.T) {
 }
 
 func TestParsePort_NoColon(t *testing.T) {
-	pm := parsePort("8080")
-	if pm != nil {
-		t.Error("expected nil for port without colon")
+	_, err := parsePort("8080")
+	if err == nil {
+		t.Error("expected error for port without colon")
 	}
 }
 
 func TestParsePort_NonNumeric(t *testing.T) {
-	pm := parsePort("abc:def")
-	if pm == nil {
-		t.Fatal("parsePort returned nil")
-	}
-	// Sscanf will fail to parse, leaving default 0 values
-	if pm.HostPort != 0 {
-		t.Errorf("HostPort = %d, want 0", pm.HostPort)
-	}
-	if pm.ContainerPort != 0 {
-		t.Errorf("ContainerPort = %d, want 0", pm.ContainerPort)
+	_, err := parsePort("abc:def")
+	if err == nil {
+		t.Error("expected error for non-numeric port")
 	}
 }
 
 func TestParsePort_ValidLargePorts(t *testing.T) {
-	pm := parsePort("443:443")
-	if pm == nil {
-		t.Fatal("parsePort returned nil")
+	pm, err := parsePort("443:443")
+	if err != nil {
+		t.Fatalf("parsePort returned error: %v", err)
 	}
 	if pm.HostPort != 443 || pm.ContainerPort != 443 {
 		t.Errorf("ports = %d:%d, want 443:443", pm.HostPort, pm.ContainerPort)
@@ -109,8 +102,8 @@ func TestParsePort_ValidLargePorts(t *testing.T) {
 }
 
 func TestParsePort_EmptyString(t *testing.T) {
-	pm := parsePort("")
-	if pm != nil {
-		t.Error("expected nil for empty string")
+	_, err := parsePort("")
+	if err == nil {
+		t.Error("expected error for empty string")
 	}
 }
