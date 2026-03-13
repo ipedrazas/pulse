@@ -27,7 +27,10 @@ type mockRepo struct {
 	err        error
 }
 
-func (m *mockRepo) Ping(_ context.Context) error                            { return m.err }
+func (m *mockRepo) Ping(_ context.Context) error { return m.err }
+func (m *mockRepo) WithTx(_ context.Context, fn func(repository.Repository) error) error {
+	return fn(m)
+}
 func (m *mockRepo) UpsertAgent(_ context.Context, _ repository.Agent) error { return m.err }
 func (m *mockRepo) GetAgent(_ context.Context, _ string) (*repository.Agent, error) {
 	return m.agent, m.err

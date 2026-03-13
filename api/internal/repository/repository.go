@@ -9,6 +9,9 @@ type Repository interface {
 	// Health
 	Ping(ctx context.Context) error
 
+	// Transactions
+	WithTx(ctx context.Context, fn func(Repository) error) error
+
 	// Agents
 	UpsertAgent(ctx context.Context, agent Agent) error
 	GetAgent(ctx context.Context, name string) (*Agent, error)

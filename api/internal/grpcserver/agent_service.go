@@ -147,26 +147,29 @@ func (s *AgentService) flushPendingCommands(stream pulsev1.AgentService_StreamLi
 func (s *AgentService) handleContainerReport(ctx context.Context, report *pulsev1.ContainerReport) string {
 	nodeName := report.NodeName
 
-	var activeIDs []string
-	for _, ci := range report.Containers {
-		activeIDs = append(activeIDs, ci.Id)
-		c := protoToContainer(ci, nodeName)
-		if err := s.repo.UpsertContainer(ctx, c); err != nil {
-			slog.Error("upsert container failed", "id", ci.Id, "error", err)
+	err := s.repo.WithTx(ctx, func(tx repository.Repository) error {
+		var activeIDs []string
+		for _, ci := range report.Containers {
+			activeIDs = append(activeIDs, ci.Id)
+			c := protoToContainer(ci, nodeName)
+			if err := tx.UpsertContainer(ctx, c); err != nil {
+				return err
+			}
+			event := repository.ContainerEvent{
+				Time:          time.Now(),
+				ContainerID:   ci.Id,
+				AgentName:     nodeName,
+				Status:        ci.Status,
+				UptimeSeconds: ci.UptimeSeconds,
+			}
+			if err := tx.InsertContainerEvent(ctx, event); err != nil {
+				return err
+			}
 		}
-		event := repository.ContainerEvent{
-			Time:          time.Now(),
-			ContainerID:   ci.Id,
-			AgentName:     nodeName,
-			Status:        ci.Status,
-			UptimeSeconds: ci.UptimeSeconds,
-		}
-		if err := s.repo.InsertContainerEvent(ctx, event); err != nil {
-			slog.Error("insert event failed", "id", ci.Id, "error", err)
-		}
-	}
-	if err := s.repo.MarkContainersRemoved(ctx, nodeName, activeIDs); err != nil {
-		slog.Error("mark removed failed", "node", nodeName, "error", err)
+		return tx.MarkContainersRemoved(ctx, nodeName, activeIDs)
+	})
+	if err != nil {
+		slog.Error("handle container report failed", "node", nodeName, "error", err)
 	}
 	return nodeName
 }

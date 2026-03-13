@@ -7,19 +7,41 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// querier is the common subset of pgxpool.Pool and pgx.Tx used by repository methods.
+type querier interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 type PostgresRepository struct {
 	pool *pgxpool.Pool
+	q    querier // pool or tx
 }
 
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{pool: pool}
+	return &PostgresRepository{pool: pool, q: pool}
 }
 
 func (r *PostgresRepository) Ping(ctx context.Context) error {
 	return r.pool.Ping(ctx)
+}
+
+func (r *PostgresRepository) WithTx(ctx context.Context, fn func(Repository) error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	txRepo := &PostgresRepository{pool: r.pool, q: tx}
+	if err := fn(txRepo); err != nil {
+		_ = tx.Rollback(ctx)
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // --- Agents ---
@@ -29,7 +51,7 @@ func (r *PostgresRepository) UpsertAgent(ctx context.Context, a Agent) error {
 	if a.Metadata != nil {
 		metadataJSON, _ = json.Marshal(a.Metadata)
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.q.Exec(ctx, `
 		INSERT INTO agents (name, status, version, last_seen, metadata)
 		VALUES ($1, $2, $3, $4, COALESCE($5::jsonb, '{}'::jsonb))
 		ON CONFLICT (name) DO UPDATE SET
@@ -44,7 +66,7 @@ func (r *PostgresRepository) UpsertAgent(ctx context.Context, a Agent) error {
 func (r *PostgresRepository) GetAgent(ctx context.Context, name string) (*Agent, error) {
 	var a Agent
 	var metadataJSON []byte
-	err := r.pool.QueryRow(ctx, `
+	err := r.q.QueryRow(ctx, `
 		SELECT name, status, version, last_seen, created_at, metadata
 		FROM agents WHERE name = $1`, name).
 		Scan(&a.Name, &a.Status, &a.Version, &a.LastSeen, &a.CreatedAt, &metadataJSON)
@@ -63,7 +85,7 @@ func (r *PostgresRepository) GetAgent(ctx context.Context, name string) (*Agent,
 }
 
 func (r *PostgresRepository) ListAgents(ctx context.Context) ([]Agent, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.q.Query(ctx, `
 		SELECT name, status, version, last_seen, created_at, metadata
 		FROM agents ORDER BY name`)
 	if err != nil {
@@ -89,12 +111,12 @@ func (r *PostgresRepository) ListAgents(ctx context.Context) ([]Agent, error) {
 }
 
 func (r *PostgresRepository) SetAgentStatus(ctx context.Context, name, status string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE agents SET status = $1 WHERE name = $2`, status, name)
+	_, err := r.q.Exec(ctx, `UPDATE agents SET status = $1 WHERE name = $2`, status, name)
 	return err
 }
 
 func (r *PostgresRepository) DeleteAgent(ctx context.Context, name string) error {
-	result, err := r.pool.Exec(ctx, `DELETE FROM agents WHERE name = $1`, name)
+	result, err := r.q.Exec(ctx, `DELETE FROM agents WHERE name = $1`, name)
 	if err != nil {
 		return err
 	}
@@ -106,7 +128,7 @@ func (r *PostgresRepository) DeleteAgent(ctx context.Context, name string) error
 
 func (r *PostgresRepository) MarkStaleAgents(ctx context.Context, threshold time.Duration) (int, error) {
 	cutoff := time.Now().Add(-threshold)
-	result, err := r.pool.Exec(ctx, `
+	result, err := r.q.Exec(ctx, `
 		UPDATE agents SET status = 'lost'
 		WHERE status = 'online' AND last_seen < $1`, cutoff)
 	if err != nil {
@@ -123,7 +145,7 @@ func (r *PostgresRepository) UpsertContainer(ctx context.Context, c Container) e
 	labelsJSON, _ := json.Marshal(c.Labels)
 	portsJSON, _ := json.Marshal(c.Ports)
 
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.q.Exec(ctx, `
 		INSERT INTO containers (container_id, agent_name, name, image, status, env_vars, mounts, labels, ports, compose_project, command, uptime_seconds)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (container_id, agent_name) DO UPDATE SET
@@ -158,7 +180,7 @@ func (r *PostgresRepository) GetContainer(ctx context.Context, containerID, agen
 		args = append(args, agentName)
 	}
 
-	err := r.pool.QueryRow(ctx, query, args...).
+	err := r.q.QueryRow(ctx, query, args...).
 		Scan(&c.ContainerID, &c.AgentName, &c.Name, &c.Image, &c.Status,
 			&envJSON, &mountsJSON, &labelsJSON, &portsJSON,
 			&c.ComposeProject, &c.Command, &c.UptimeSeconds, &c.CreatedAt, &c.RemovedAt)
@@ -185,7 +207,7 @@ func (r *PostgresRepository) ListContainers(ctx context.Context, agentName strin
 	}
 
 	var total int
-	if err := r.pool.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := r.q.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -205,7 +227,7 @@ func (r *PostgresRepository) ListContainers(ctx context.Context, agentName strin
 	query += " LIMIT $" + itoa(argIdx) + " OFFSET $" + itoa(argIdx+1)
 	args = append(args, limit, offset)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -230,7 +252,7 @@ func (r *PostgresRepository) ListContainers(ctx context.Context, agentName strin
 }
 
 func (r *PostgresRepository) MarkContainersRemoved(ctx context.Context, agentName string, activeIDs []string) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.q.Exec(ctx, `
 		UPDATE containers SET removed_at = NOW()
 		WHERE agent_name = $1 AND removed_at IS NULL AND container_id != ALL($2)`,
 		agentName, activeIDs)
@@ -240,7 +262,7 @@ func (r *PostgresRepository) MarkContainersRemoved(ctx context.Context, agentNam
 // --- Container Events ---
 
 func (r *PostgresRepository) InsertContainerEvent(ctx context.Context, e ContainerEvent) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.q.Exec(ctx, `
 		INSERT INTO container_events (time, container_id, agent_name, status, uptime_seconds)
 		VALUES ($1, $2, $3, $4, $5)`,
 		e.Time, e.ContainerID, e.AgentName, e.Status, e.UptimeSeconds)
@@ -250,7 +272,7 @@ func (r *PostgresRepository) InsertContainerEvent(ctx context.Context, e Contain
 // --- Commands ---
 
 func (r *PostgresRepository) CreateCommand(ctx context.Context, cmd Command) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.q.Exec(ctx, `
 		INSERT INTO commands (id, agent_name, type, payload, status)
 		VALUES ($1, $2, $3, $4, $5)`,
 		cmd.ID, cmd.AgentName, cmd.Type, cmd.Payload, cmd.Status)
@@ -259,7 +281,7 @@ func (r *PostgresRepository) CreateCommand(ctx context.Context, cmd Command) err
 
 func (r *PostgresRepository) GetCommand(ctx context.Context, id string) (*Command, error) {
 	var c Command
-	err := r.pool.QueryRow(ctx, `
+	err := r.q.QueryRow(ctx, `
 		SELECT id, agent_name, type, payload, status, result, created_at, completed_at
 		FROM commands WHERE id = $1`, id).
 		Scan(&c.ID, &c.AgentName, &c.Type, &c.Payload, &c.Status, &c.Result, &c.CreatedAt, &c.CompletedAt)
@@ -273,7 +295,7 @@ func (r *PostgresRepository) GetCommand(ctx context.Context, id string) (*Comman
 }
 
 func (r *PostgresRepository) GetPendingCommands(ctx context.Context, agentName string) ([]Command, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.q.Query(ctx, `
 		SELECT id, agent_name, type, payload, status, result, created_at, completed_at
 		FROM commands WHERE agent_name = $1 AND status = 'pending'
 		ORDER BY created_at`, agentName)
@@ -299,7 +321,7 @@ func (r *PostgresRepository) CompleteCommand(ctx context.Context, id, result str
 		status = "completed"
 	}
 	now := time.Now()
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.q.Exec(ctx, `
 		UPDATE commands SET status = $1, result = $2, completed_at = $3
 		WHERE id = $4`,
 		status, result, now, id)
