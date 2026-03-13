@@ -16,6 +16,10 @@ func newPsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ps",
 		Short: "List containers",
+		Long:  "List running containers across nodes. Optionally filter by node name.",
+		Example: `  pulse ps
+  pulse ps --node worker-1
+  pulse ps -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			debugf("connecting to %s", apiAddr)
 			client, conn, err := grpcclient.NewCLIClient(apiAddr)

@@ -24,6 +24,9 @@ func newSendCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "send",
 		Short: "Send a file to a node",
+		Long:  "Transfer a local file to a remote node. Files are sent in 64KB chunks.",
+		Example: `  pulse send --node worker-1 --file ./config.yaml
+  pulse send --node worker-1 --file ./app.tar.gz --dest /opt/app/app.tar.gz`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if node == "" {
 				return fmt.Errorf("--node is required")
@@ -53,6 +56,7 @@ func newSendCmd() *cobra.Command {
 			totalSize := int64(len(data))
 
 			// Send file in chunks
+			var lastCmdID string
 			for offset := int64(0); offset < totalSize; offset += chunkSize {
 				end := offset + chunkSize
 				if end > totalSize {
@@ -60,6 +64,9 @@ func newSendCmd() *cobra.Command {
 				}
 				chunk := data[offset:end]
 				isFinal := end == totalSize
+
+				pct := int(float64(end) / float64(totalSize) * 100)
+				fmt.Fprintf(os.Stderr, "\rSending %s... %d%%", filepath.Base(filePath), pct)
 
 				resp, err := client.SendCommand(ctx, &pulsev1.SendCommandRequest{
 					NodeName: node,
@@ -74,13 +81,13 @@ func newSendCmd() *cobra.Command {
 					},
 				})
 				if err != nil {
+					fmt.Fprint(os.Stderr, "\r\033[K")
 					return fmt.Errorf("send chunk at offset %d: %w", offset, err)
 				}
-
-				if isFinal {
-					fmt.Printf("File sent: %s → %s (command: %s)\n", filePath, destPath, resp.CommandId)
-				}
+				lastCmdID = resp.CommandId
 			}
+			fmt.Fprint(os.Stderr, "\r\033[K")
+			fmt.Printf("File sent: %s → %s (command: %s)\n", filePath, destPath, lastCmdID)
 
 			return nil
 		},

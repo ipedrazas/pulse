@@ -20,11 +20,17 @@ func newRunCmd() *cobra.Command {
 		ports   []string
 		volumes []string
 		rm      bool
+		wait    bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run a container on a node",
+		Long:  "Run a new container on a remote node. Returns a command ID that can be used to track execution.",
+		Example: `  pulse run --node worker-1 --image nginx
+  pulse run --node worker-1 --image redis --name my-redis
+  pulse run --node worker-1 --image nginx -p 8080:80 -e ENV=prod
+  pulse run --node worker-1 --image nginx -v /data:/data --rm`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if node == "" {
 				return fmt.Errorf("--node is required")
@@ -79,7 +85,16 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("send command: %w", err)
 			}
 
-			fmt.Printf("Command queued: %s\n", resp.CommandId)
+			if !wait {
+				fmt.Printf("Command queued: %s\n", resp.CommandId)
+				return nil
+			}
+
+			result, err := waitForCommand(ctx, client, resp.CommandId)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Container started (command %s)\n", result.CommandId)
 			return nil
 		},
 	}
@@ -91,6 +106,7 @@ func newRunCmd() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&ports, "port", "p", nil, "Port mappings (host:container)")
 	cmd.Flags().StringSliceVarP(&volumes, "volume", "v", nil, "Volume mounts")
 	cmd.Flags().BoolVar(&rm, "rm", false, "Remove container when it exits")
+	cmd.Flags().BoolVar(&wait, "wait", false, "Wait for the command to complete")
 
 	return cmd
 }

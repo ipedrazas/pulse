@@ -20,7 +20,11 @@ func newLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs [container_id]",
 		Short: "Fetch container logs from a node",
-		Args:  cobra.ExactArgs(1),
+		Long:  "Fetch container logs from a remote node. Blocks until logs are returned or the request times out.",
+		Example: `  pulse logs abc123def456 --node worker-1
+  pulse logs abc123def456 --node worker-1 --tail 50
+  pulse logs abc123def456 --node worker-1 -f`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if node == "" {
 				return fmt.Errorf("--node is required")
@@ -49,31 +53,12 @@ func newLogsCmd() *cobra.Command {
 				return fmt.Errorf("send command: %w", err)
 			}
 
-			// Poll for the result
-			ticker := time.NewTicker(500 * time.Millisecond)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					return fmt.Errorf("timed out waiting for logs (command %s)", resp.CommandId)
-				case <-ticker.C:
-					result, err := client.GetCommandResult(ctx, &pulsev1.GetCommandResultRequest{
-						CommandId: resp.CommandId,
-					})
-					if err != nil {
-						return fmt.Errorf("get result: %w", err)
-					}
-					switch result.Status {
-					case "completed":
-						fmt.Print(result.Result)
-						return nil
-					case "failed":
-						return fmt.Errorf("command failed: %s", result.Result)
-					}
-					// still pending, keep polling
-				}
+			result, err := waitForCommand(ctx, client, resp.CommandId)
+			if err != nil {
+				return err
 			}
+			fmt.Print(result.Result)
+			return nil
 		},
 	}
 

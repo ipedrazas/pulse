@@ -17,11 +17,17 @@ func newUpCmd() *cobra.Command {
 		projectDir string
 		detach     bool
 		pull       bool
+		wait       bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Run docker compose up on a node",
+		Long:  "Run docker compose up on a remote node. Supports compose file paths and OCI references.",
+		Example: `  pulse up --node worker-1 --project-dir /opt/app
+  pulse up --node worker-1 -f docker-compose.prod.yml
+  pulse up --node worker-1 -f oci://registry/stack:latest --pull
+  pulse up --node worker-1 --project-dir /opt/app --wait`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if node == "" {
 				return fmt.Errorf("--node is required")
@@ -33,7 +39,7 @@ func newUpCmd() *cobra.Command {
 			}
 			defer conn.Close()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 
 			resp, err := client.SendCommand(ctx, &pulsev1.SendCommandRequest{
@@ -51,7 +57,16 @@ func newUpCmd() *cobra.Command {
 				return fmt.Errorf("send command: %w", err)
 			}
 
-			fmt.Printf("Command queued: %s\n", resp.CommandId)
+			if !wait {
+				fmt.Printf("Command queued: %s\n", resp.CommandId)
+				return nil
+			}
+
+			result, err := waitForCommand(ctx, client, resp.CommandId)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Compose up completed (command %s)\n", result.CommandId)
 			return nil
 		},
 	}
@@ -61,6 +76,7 @@ func newUpCmd() *cobra.Command {
 	cmd.Flags().StringVar(&projectDir, "project-dir", "", "Project directory on the agent")
 	cmd.Flags().BoolVarP(&detach, "detach", "d", true, "Run in detached mode")
 	cmd.Flags().BoolVar(&pull, "pull", false, "Pull images before starting")
+	cmd.Flags().BoolVar(&wait, "wait", false, "Wait for the command to complete")
 
 	return cmd
 }

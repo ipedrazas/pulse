@@ -282,6 +282,32 @@ func TestRunCmd_EmptyEnvKey(t *testing.T) {
 	}
 }
 
+// --- completion ---
+
+func TestCompletionCmd_Bash(t *testing.T) {
+	root := NewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"completion", "bash"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("completion bash failed: %v", err)
+	}
+}
+
+func TestCompletionCmd_InvalidShell(t *testing.T) {
+	_, _, err := executeCmd("completion", "powershell")
+	if err == nil {
+		t.Fatal("expected error for invalid shell")
+	}
+}
+
+func TestCompletionCmd_MissingArg(t *testing.T) {
+	_, _, err := executeCmd("completion")
+	if err == nil {
+		t.Fatal("expected error for missing shell arg")
+	}
+}
+
 // --- subcommand structure ---
 
 func TestNodesLsCmd_IsRegistered(t *testing.T) {

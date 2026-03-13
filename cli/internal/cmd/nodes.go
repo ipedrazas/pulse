@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	grpcclient "github.com/ipedrazas/pulse/cli/internal/grpc"
@@ -14,7 +17,12 @@ func newNodesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "nodes",
 		Short: "Manage nodes",
-		RunE:  listNodesRun,
+		Long:  "List, inspect, and manage compute nodes registered with the Pulse control plane.",
+		Example: `  pulse nodes
+  pulse nodes ls
+  pulse nodes rm my-node
+  pulse nodes rm my-node --yes`,
+		RunE: listNodesRun,
 	}
 
 	cmd.AddCommand(newNodesLsCmd())
@@ -25,9 +33,10 @@ func newNodesCmd() *cobra.Command {
 
 func newNodesLsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "ls",
-		Short: "List all nodes",
-		RunE:  listNodesRun,
+		Use:     "ls",
+		Short:   "List all nodes",
+		Example: `  pulse nodes ls`,
+		RunE:    listNodesRun,
 	}
 }
 
@@ -73,11 +82,27 @@ func listNodesRun(_ *cobra.Command, _ []string) error {
 }
 
 func newNodesRmCmd() *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+
+	cmd := &cobra.Command{
 		Use:   "rm <name>",
 		Short: "Remove a node",
-		Args:  cobra.ExactArgs(1),
+		Example: `  pulse nodes rm my-node
+  pulse nodes rm my-node --yes`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			name := args[0]
+
+			if !yes {
+				fmt.Fprintf(os.Stderr, "Remove node %q? This cannot be undone. [y/N] ", name)
+				reader := bufio.NewReader(os.Stdin)
+				answer, _ := reader.ReadString('\n')
+				if strings.TrimSpace(strings.ToLower(answer)) != "y" {
+					fmt.Fprintln(os.Stderr, "Aborted.")
+					return nil
+				}
+			}
+
 			client, conn, err := grpcclient.NewCLIClient(apiAddr)
 			if err != nil {
 				return err
@@ -87,13 +112,16 @@ func newNodesRmCmd() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			_, err = client.DeleteNode(ctx, &pulsev1.DeleteNodeRequest{Name: args[0]})
+			_, err = client.DeleteNode(ctx, &pulsev1.DeleteNodeRequest{Name: name})
 			if err != nil {
 				return fmt.Errorf("delete node: %w", err)
 			}
 
-			fmt.Printf("Node %q removed\n", args[0])
+			fmt.Printf("Node %q removed\n", name)
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&yes, "yes", false, "Skip confirmation prompt")
+	return cmd
 }

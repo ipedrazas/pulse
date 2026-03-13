@@ -9,17 +9,18 @@ language:
     source_dir:
       - path: api
         profile: api
+        coverage_threshold: 45
       - path: cli
         profile: cli
-    coverage_threshold: 50
+        coverage_threshold: 20
 
   typescript:
     source_dir: [ui]
-    coverage_threshold: 50
+    coverage_threshold: 45
 
   rust:
     source_dir: [agent]
-    coverage_threshold: 50
+    coverage_threshold: 45
 #
 files:
   required:

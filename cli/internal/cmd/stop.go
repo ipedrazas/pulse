@@ -11,12 +11,17 @@ import (
 )
 
 func newStopCmd() *cobra.Command {
-	var node string
+	var (
+		node string
+		wait bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "stop [container_id]",
 		Short: "Stop a container on a node",
-		Args:  cobra.ExactArgs(1),
+		Example: `  pulse stop abc123def456 --node worker-1
+  pulse stop abc123def456 --node worker-1 --wait`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if node == "" {
 				return fmt.Errorf("--node is required")
@@ -43,11 +48,21 @@ func newStopCmd() *cobra.Command {
 				return fmt.Errorf("send command: %w", err)
 			}
 
-			fmt.Printf("Command queued: %s\n", resp.CommandId)
+			if !wait {
+				fmt.Printf("Command queued: %s\n", resp.CommandId)
+				return nil
+			}
+
+			result, err := waitForCommand(ctx, client, resp.CommandId)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Container stopped (command %s)\n", result.CommandId)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&node, "node", "", "Target node (required)")
+	cmd.Flags().BoolVar(&wait, "wait", false, "Wait for the command to complete")
 	return cmd
 }
