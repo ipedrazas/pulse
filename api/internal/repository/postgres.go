@@ -18,6 +18,10 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+func (r *PostgresRepository) Ping(ctx context.Context) error {
+	return r.pool.Ping(ctx)
+}
+
 // --- Agents ---
 
 func (r *PostgresRepository) UpsertAgent(ctx context.Context, a Agent) error {

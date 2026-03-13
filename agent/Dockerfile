@@ -12,4 +12,6 @@ RUN cd agent && cargo build --release
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates docker-cli docker-cli-compose
 COPY --from=builder /src/agent/target/release/pulse-agent /usr/local/bin/pulse-agent
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD pgrep pulse-agent || exit 1
 ENTRYPOINT ["pulse-agent"]

@@ -45,6 +45,11 @@ func (h *Handler) Register(r *gin.Engine) {
 }
 
 func (h *Handler) healthz(c *gin.Context) {
+	if err := h.repo.Ping(c.Request.Context()); err != nil {
+		slog.Error("healthz: database unreachable", "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "degraded", "error": "database unreachable"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 

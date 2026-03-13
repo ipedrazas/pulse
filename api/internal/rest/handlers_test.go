@@ -27,6 +27,7 @@ type mockRepo struct {
 	err        error
 }
 
+func (m *mockRepo) Ping(_ context.Context) error                            { return m.err }
 func (m *mockRepo) UpsertAgent(_ context.Context, _ repository.Agent) error { return m.err }
 func (m *mockRepo) GetAgent(_ context.Context, _ string) (*repository.Agent, error) {
 	return m.agent, m.err
@@ -75,6 +76,16 @@ func TestHealthz_Returns200(t *testing.T) {
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "ok")
+}
+
+func TestHealthz_DBDown_Returns503(t *testing.T) {
+	r := setupRouter(&mockRepo{err: errors.New("connection refused")})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/healthz", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 503, w.Code)
+	assert.Contains(t, w.Body.String(), "degraded")
 }
 
 // --- listNodes ---

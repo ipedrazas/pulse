@@ -90,7 +90,10 @@ pub async fn stream_loop(
                 break;
             }
             Err(_) => {
-                warn!("no message received in {:?}, treating stream as stale", STREAM_READ_TIMEOUT);
+                warn!(
+                    "no message received in {:?}, treating stream as stale",
+                    STREAM_READ_TIMEOUT
+                );
                 break;
             }
         }

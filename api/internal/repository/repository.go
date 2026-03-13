@@ -6,6 +6,9 @@ import (
 )
 
 type Repository interface {
+	// Health
+	Ping(ctx context.Context) error
+
 	// Agents
 	UpsertAgent(ctx context.Context, agent Agent) error
 	GetAgent(ctx context.Context, name string) (*Agent, error)

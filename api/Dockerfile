@@ -22,7 +22,9 @@ RUN cd api && CGO_ENABLED=0 go build \
     -o /pulse-api ./cmd/api
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates curl
 COPY --from=builder /pulse-api /usr/local/bin/pulse-api
 EXPOSE 8080 9090
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -sf http://localhost:8080/healthz || exit 1
 ENTRYPOINT ["pulse-api"]
