@@ -1,21 +1,7 @@
-pub mod proto {
-    pub mod pulse {
-        pub mod v1 {
-            tonic::include_proto!("pulse.v1");
-        }
-    }
-}
-
-mod config;
-mod docker;
-mod executor;
-mod grpc;
-mod redact;
-mod sysinfo;
-
 use std::sync::Arc;
 
-use proto::pulse::v1::{AgentMessage, Heartbeat, agent_message};
+use pulse_agent::proto::pulse::v1::{AgentMessage, Heartbeat, agent_message};
+use pulse_agent::{config, docker, executor, grpc, sysinfo};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
