@@ -118,29 +118,35 @@ func main() {
 	}()
 
 	// Stale node detection
-	go func() {
-		ticker := time.NewTicker(cfg.StaleThreshold)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				n, err := repo.MarkStaleAgents(context.Background(), cfg.StaleThreshold)
-				if err != nil {
-					slog.Error("mark stale agents failed", "error", err)
-				} else if n > 0 {
-					slog.Warn("marked agents as lost", "count", n, "threshold", cfg.StaleThreshold)
-				}
-			}
-		}
-	}()
+	go runStaleDetection(ctx, repo, cfg.StaleThreshold)
 
 	// Wait for shutdown signal
 	<-ctx.Done()
 	slog.Info("shutting down")
 
-	// Give in-flight requests up to 15 seconds to complete
+	gracefulShutdown(httpSrv, grpcSrv)
+	slog.Info("shutdown complete")
+}
+
+func runStaleDetection(ctx context.Context, repo *repository.PostgresRepository, threshold time.Duration) {
+	ticker := time.NewTicker(threshold)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n, err := repo.MarkStaleAgents(context.Background(), threshold)
+			if err != nil {
+				slog.Error("mark stale agents failed", "error", err)
+			} else if n > 0 {
+				slog.Warn("marked agents as lost", "count", n, "threshold", threshold)
+			}
+		}
+	}
+}
+
+func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 
@@ -148,7 +154,6 @@ func main() {
 		slog.Error("rest shutdown error", "error", err)
 	}
 
-	// GracefulStop waits for active RPCs; force-stop after the deadline
 	stopped := make(chan struct{})
 	go func() {
 		grpcSrv.GracefulStop()
@@ -160,6 +165,4 @@ func main() {
 		slog.Warn("grpc graceful stop timed out, forcing stop")
 		grpcSrv.Stop()
 	}
-
-	slog.Info("shutdown complete")
 }
