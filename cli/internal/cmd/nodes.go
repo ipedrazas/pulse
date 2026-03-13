@@ -32,6 +32,7 @@ func newNodesLsCmd() *cobra.Command {
 }
 
 func listNodesRun(_ *cobra.Command, _ []string) error {
+	debugf("connecting to %s", apiAddr)
 	client, conn, err := grpcclient.NewCLIClient(apiAddr)
 	if err != nil {
 		return err
@@ -41,10 +42,12 @@ func listNodesRun(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	debugf("listing nodes")
 	resp, err := client.ListNodes(ctx, &pulsev1.ListNodesRequest{})
 	if err != nil {
 		return fmt.Errorf("list nodes: %w", err)
 	}
+	debugf("received %d nodes", len(resp.Nodes))
 
 	if output == "json" {
 		return printJSON(resp.Nodes)

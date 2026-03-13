@@ -33,6 +33,7 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("--image is required")
 			}
 
+			debugf("connecting to %s", apiAddr)
 			client, conn, err := grpcclient.NewCLIClient(apiAddr)
 			if err != nil {
 				return err
@@ -41,6 +42,7 @@ func newRunCmd() *cobra.Command {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
+			debugf("running container image=%q on node=%q", image, node)
 
 			envMap := make(map[string]string)
 			for _, e := range envVars {

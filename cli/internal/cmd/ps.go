@@ -17,6 +17,7 @@ func newPsCmd() *cobra.Command {
 		Use:   "ps",
 		Short: "List containers",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			debugf("connecting to %s", apiAddr)
 			client, conn, err := grpcclient.NewCLIClient(apiAddr)
 			if err != nil {
 				return err
@@ -26,6 +27,7 @@ func newPsCmd() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
+			debugf("listing containers (node=%q)", node)
 			resp, err := client.ListContainers(ctx, &pulsev1.ListContainersRequest{
 				NodeName: node,
 				PageSize: 100,
@@ -33,6 +35,7 @@ func newPsCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("list containers: %w", err)
 			}
+			debugf("received %d containers", len(resp.Containers))
 
 			if output == "json" {
 				return printJSON(resp.Containers)
