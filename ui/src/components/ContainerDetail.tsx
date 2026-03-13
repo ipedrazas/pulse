@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import type { Container } from '../types'
 import {
   stopContainer,
@@ -39,9 +40,12 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
           const result = await getCommandResult(command_id)
           if (result.status === 'completed') {
             setActionState((s) => ({ ...s, [name]: 'success' }))
+            toast.success(`${name} completed on ${container.name}`)
           } else if (result.status === 'failed') {
             setActionState((s) => ({ ...s, [name]: 'error' }))
-            setActionError(result.result || 'Command failed')
+            const msg = result.result || 'Command failed'
+            setActionError(msg)
+            toast.error(`${name} failed on ${container.name}: ${msg}`)
           } else {
             const t = setTimeout(poll, 1000)
             timersRef.current.add(t)
@@ -55,7 +59,9 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
       timersRef.current.add(t)
     } catch (err) {
       setActionState((s) => ({ ...s, [name]: 'error' }))
-      setActionError(err instanceof Error ? err.message : 'Action failed')
+      const msg = err instanceof Error ? err.message : 'Action failed'
+      setActionError(msg)
+      toast.error(`${name} failed: ${msg}`)
     }
   }
 
@@ -183,6 +189,7 @@ function ActionButton({
     <button
       onClick={onClick}
       disabled={isPending}
+      aria-label={label}
       className={`rounded border px-3 py-1.5 text-xs font-medium text-gray-300 transition disabled:opacity-50 ${variantClasses[variant]}`}
     >
       {stateLabel ?? label}

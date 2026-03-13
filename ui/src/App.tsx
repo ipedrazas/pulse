@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { getNodes, getContainers, getHealth } from './api/client'
 import { Header } from './components/Header'
 import { NodeCard } from './components/NodeCard'
@@ -7,11 +7,13 @@ import { SearchBar } from './components/SearchBar'
 import { Spinner } from './components/Spinner'
 import { EmptyState } from './components/EmptyState'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { ToastProvider } from './components/ToastProvider'
 import { usePolling } from './hooks/usePolling'
+import { useLocalStorage } from './hooks/useLocalStorage'
 
 export default function App() {
-  const [selectedNode, setSelectedNode] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
+  const [selectedNode, setSelectedNode] = useLocalStorage<string | null>('pulse:selectedNode', null)
+  const [search, setSearch] = useLocalStorage('pulse:search', '')
 
   const health = usePolling(getHealth, 15000)
   const nodes = usePolling(getNodes, 10000)
@@ -26,6 +28,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
+      <ToastProvider />
       <Header healthy={healthy} />
 
       <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
@@ -33,7 +36,11 @@ export default function App() {
         <section className="mb-6 sm:mb-8">
           <div className="mb-3 flex items-center justify-between sm:mb-4">
             <h2 className="text-base font-semibold sm:text-lg">Nodes</h2>
-            <button onClick={nodes.refresh} className="text-xs text-gray-500 hover:text-white">
+            <button
+              onClick={nodes.refresh}
+              aria-label="Refresh nodes"
+              className="text-xs text-gray-500 hover:text-white"
+            >
               Refresh
             </button>
           </div>

@@ -43,7 +43,7 @@ func setupGRPCServer(t *testing.T) (pulsev1.AgentServiceClient, pulsev1.CLIServi
 	err = db.RunMigrations(connStr)
 	require.NoError(t, err)
 
-	pool, err := db.NewPool(ctx, connStr)
+	pool, err := db.NewPool(ctx, connStr, nil)
 	require.NoError(t, err)
 
 	repo := repository.NewPostgresRepository(pool)

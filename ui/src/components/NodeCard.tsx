@@ -14,6 +14,8 @@ export function NodeCard({ agent, selected, onClick }: NodeCardProps) {
   return (
     <button
       onClick={onClick}
+      aria-label={`Node ${agent.name}, ${agent.status}, ${agent.container_count} containers`}
+      aria-pressed={selected}
       className={`w-full rounded-lg border p-4 text-left transition ${
         selected
           ? 'border-blue-500 bg-gray-800'

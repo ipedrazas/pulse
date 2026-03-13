@@ -48,7 +48,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	pool, err := db.NewPool(ctx, cfg.DBURL)
+	pool, err := db.NewPool(ctx, cfg.DBURL, &db.PoolConfig{
+		MaxConns:          cfg.DBPoolMaxConns,
+		MinConns:          cfg.DBPoolMinConns,
+		MaxIdleTime:       cfg.DBPoolMaxIdleTime,
+		HealthCheckPeriod: cfg.DBPoolHealthCheckPeriod,
+	})
 	if err != nil {
 		slog.Error("database connection failed", "error", err)
 		os.Exit(1)

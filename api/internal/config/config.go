@@ -22,9 +22,9 @@ type Config struct {
 	LogLevel       slog.Level
 
 	// Database pool
-	DBPoolMaxConns         int32
-	DBPoolMinConns         int32
-	DBPoolMaxIdleTime      time.Duration
+	DBPoolMaxConns          int32
+	DBPoolMinConns          int32
+	DBPoolMaxIdleTime       time.Duration
 	DBPoolHealthCheckPeriod time.Duration
 }
 
