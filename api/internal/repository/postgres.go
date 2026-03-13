@@ -229,35 +229,27 @@ func (r *PostgresRepository) GetContainer(ctx context.Context, containerID, agen
 
 func (r *PostgresRepository) ListContainers(ctx context.Context, agentName string, limit, offset int) ([]Container, int, error) {
 	// Count query
-	countQuery := `SELECT COUNT(*) FROM containers WHERE removed_at IS NULL`
-	countArgs := []any{}
+	qb := newQueryBuilder(`SELECT COUNT(*) FROM containers WHERE removed_at IS NULL`)
 	if agentName != "" {
-		countQuery += " AND agent_name = $1"
-		countArgs = append(countArgs, agentName)
+		qb.where("agent_name", agentName)
 	}
 
 	var total int
-	if err := r.q.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := r.q.QueryRow(ctx, qb.sql(), qb.args()...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
 	// Data query
-	query := `SELECT container_id, agent_name, name, image, status, env_vars, mounts, labels, ports,
+	dqb := newQueryBuilder(`SELECT container_id, agent_name, name, image, status, env_vars, mounts, labels, ports,
 		compose_project, command, uptime_seconds, created_at, removed_at
-		FROM containers WHERE removed_at IS NULL`
-	args := []any{}
-	argIdx := 1
-
+		FROM containers WHERE removed_at IS NULL`)
 	if agentName != "" {
-		query += " AND agent_name = $" + itoa(argIdx)
-		args = append(args, agentName)
-		argIdx++
+		dqb.where("agent_name", agentName)
 	}
-	query += " ORDER BY name"
-	query += " LIMIT $" + itoa(argIdx) + " OFFSET $" + itoa(argIdx+1)
-	args = append(args, limit, offset)
+	dqb.orderBy("name")
+	dqb.limit(limit, offset)
 
-	rows, err := r.q.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, dqb.sql(), dqb.args()...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -368,4 +360,47 @@ func (r *PostgresRepository) CompleteCommand(ctx context.Context, id, result str
 
 func itoa(i int) string {
 	return strconv.Itoa(i)
+}
+
+// queryBuilder helps construct parameterised SQL queries without manual
+// placeholder numbering.
+type queryBuilder struct {
+	base    string
+	clauses []string
+	params  []any
+	suffix  string
+}
+
+func newQueryBuilder(base string) *queryBuilder {
+	return &queryBuilder{base: base}
+}
+
+func (qb *queryBuilder) where(column string, value any) {
+	idx := len(qb.params) + 1
+	qb.clauses = append(qb.clauses, column+" = $"+itoa(idx))
+	qb.params = append(qb.params, value)
+}
+
+func (qb *queryBuilder) orderBy(column string) {
+	qb.suffix += " ORDER BY " + column
+}
+
+func (qb *queryBuilder) limit(limit, offset int) {
+	limIdx := len(qb.params) + 1
+	offIdx := limIdx + 1
+	qb.suffix += " LIMIT $" + itoa(limIdx) + " OFFSET $" + itoa(offIdx)
+	qb.params = append(qb.params, limit, offset)
+}
+
+func (qb *queryBuilder) sql() string {
+	q := qb.base
+	for _, c := range qb.clauses {
+		q += " AND " + c
+	}
+	q += qb.suffix
+	return q
+}
+
+func (qb *queryBuilder) args() []any {
+	return qb.params
 }

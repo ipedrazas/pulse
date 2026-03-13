@@ -12,26 +12,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewNotifier_EmptyURL(t *testing.T) {
+func TestNewNotifier_EmptyURL_ReturnsNoop(t *testing.T) {
 	n := NewNotifier("")
-	assert.Nil(t, n)
+	assert.NotNil(t, n)
+	_, ok := n.(noopNotifier)
+	assert.True(t, ok, "expected noopNotifier for empty URL")
 }
 
 func TestNewNotifier_WithURL(t *testing.T) {
 	n := NewNotifier("http://example.com/webhook")
 	assert.NotNil(t, n)
+	_, ok := n.(*webhookNotifier)
+	assert.True(t, ok, "expected webhookNotifier for non-empty URL")
 }
 
-func TestNilNotifier_AgentOnline(t *testing.T) {
-	var n *Notifier
+func TestNoopNotifier_DoesNotPanic(t *testing.T) {
+	n := NewNotifier("")
 	assert.NotPanics(t, func() {
 		n.AgentOnline("node-1")
-	})
-}
-
-func TestNilNotifier_AgentOffline(t *testing.T) {
-	var n *Notifier
-	assert.NotPanics(t, func() {
 		n.AgentOffline("node-1")
 	})
 }

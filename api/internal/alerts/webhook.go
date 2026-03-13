@@ -9,37 +9,45 @@ import (
 	"time"
 )
 
-type Notifier struct {
-	webhookURL string
-	client     *http.Client
+// Notifier sends agent status change notifications.
+type Notifier interface {
+	AgentOnline(nodeName string)
+	AgentOffline(nodeName string)
 }
 
-func NewNotifier(webhookURL string) *Notifier {
-	if webhookURL == "" {
-		return nil
+// NewNotifier returns a webhook-backed notifier if url is non-empty,
+// otherwise a no-op implementation.
+func NewNotifier(url string) Notifier {
+	if url == "" {
+		return noopNotifier{}
 	}
-	return &Notifier{
-		webhookURL: webhookURL,
+	return &webhookNotifier{
+		webhookURL: url,
 		client:     &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
-func (n *Notifier) AgentOnline(nodeName string) {
-	if n == nil {
-		return
-	}
+// noopNotifier silently discards all notifications.
+type noopNotifier struct{}
+
+func (noopNotifier) AgentOnline(_ string)  {}
+func (noopNotifier) AgentOffline(_ string) {}
+
+// webhookNotifier sends Slack/Discord-compatible webhook payloads.
+type webhookNotifier struct {
+	webhookURL string
+	client     *http.Client
+}
+
+func (n *webhookNotifier) AgentOnline(nodeName string) {
 	n.send(fmt.Sprintf(":green_circle: Agent **%s** is now **online**", nodeName))
 }
 
-func (n *Notifier) AgentOffline(nodeName string) {
-	if n == nil {
-		return
-	}
+func (n *webhookNotifier) AgentOffline(nodeName string) {
 	n.send(fmt.Sprintf(":red_circle: Agent **%s** went **offline**", nodeName))
 }
 
-func (n *Notifier) send(message string) {
-	// Slack/Discord compatible payload
+func (n *webhookNotifier) send(message string) {
 	payload := map[string]string{"text": message, "content": message}
 	body, _ := json.Marshal(payload)
 

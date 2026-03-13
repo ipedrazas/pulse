@@ -302,3 +302,163 @@ func TestCreateCommand_RepoError(t *testing.T) {
 
 	assert.Equal(t, 500, w.Code)
 }
+
+// --- Edge-case and negative tests ---
+
+func TestCreateCommand_EmptyBody(t *testing.T) {
+	r := setupRouter(&mockRepo{})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/commands", nil)
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 400, w.Code)
+}
+
+func TestCreateCommand_MissingNodeName(t *testing.T) {
+	r := setupRouter(&mockRepo{})
+	w := httptest.NewRecorder()
+	body := `{"type":"run_container","payload":{}}`
+	req, _ := http.NewRequest("POST", "/api/v1/commands", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 400, w.Code)
+}
+
+func TestGetNode_EmptyName(t *testing.T) {
+	repo := &mockRepo{agent: nil}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	// Gin treats empty param as 404 since route doesn't match
+	req, _ := http.NewRequest("GET", "/api/v1/nodes/", nil)
+	r.ServeHTTP(w, req)
+
+	// No route matches /api/v1/nodes/ with trailing slash
+	assert.NotEqual(t, 200, w.Code)
+}
+
+func TestGetContainer_EmptyID(t *testing.T) {
+	r := setupRouter(&mockRepo{container: nil})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/containers/", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, 200, w.Code)
+}
+
+func TestDeleteNode_NotFound(t *testing.T) {
+	repo := &mockRepo{err: errors.New("not found")}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/api/v1/nodes/nonexistent", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestListContainers_NegativeOffset(t *testing.T) {
+	repo := &mockRepo{total: 0}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/containers?offset=-1", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	// Negative offset should be treated as 0
+	assert.Equal(t, float64(0), body["offset"])
+}
+
+func TestListContainers_InvalidPageSize(t *testing.T) {
+	repo := &mockRepo{total: 0}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/containers?page_size=abc", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	// Invalid page_size should fall back to default
+	assert.Equal(t, float64(50), body["page_size"])
+}
+
+func TestGetCommand_NotFound(t *testing.T) {
+	repo := &mockRepo{}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/commands/nonexistent-id", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestStopContainer_NotFound(t *testing.T) {
+	repo := &mockRepo{container: nil}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/containers/missing/stop", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestRestartContainer_NotFound(t *testing.T) {
+	repo := &mockRepo{container: nil}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/containers/missing/restart", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestRequestLogs_NotFound(t *testing.T) {
+	repo := &mockRepo{container: nil}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/containers/missing/logs", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestListNodes_NilMetadata(t *testing.T) {
+	repo := &mockRepo{
+		agents: []repository.Agent{
+			{Name: "node-1", Status: "online", Version: "0.1.0", Metadata: nil},
+		},
+	}
+	r := setupRouter(repo)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/nodes", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "node-1")
+}
+
+func TestHealthz_ReturnsJSON(t *testing.T) {
+	r := setupRouter(&mockRepo{})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/healthz", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+}
+
+func TestInfo_ReturnsJSON(t *testing.T) {
+	r := setupRouter(&mockRepo{})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/info", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Contains(t, body, "version")
+	assert.Contains(t, body, "commit")
+}

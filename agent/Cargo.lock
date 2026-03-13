@@ -1047,6 +1047,7 @@ dependencies = [
  "sha2",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tonic",
  "tonic-build",
  "tracing",

@@ -4,6 +4,7 @@ use pulse_agent::proto::pulse::v1::{AgentMessage, Heartbeat, agent_message};
 use pulse_agent::{config, docker, executor, grpc, sysinfo};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 #[tokio::main]
@@ -72,8 +73,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Channel for commands received from server
                 let (cmd_tx, mut cmd_rx) = mpsc::channel(32);
 
-                // Spawn stream reader
-                let stream_handle = tokio::spawn(grpc::stream_loop(inbound, cmd_tx));
+                // Spawn stream reader with cancellation token
+                let stream_cancel = CancellationToken::new();
+                let stream_handle =
+                    tokio::spawn(grpc::stream_loop(inbound, cmd_tx, stream_cancel.clone()));
 
                 let mut poll_interval = tokio::time::interval(cfg.poll_interval);
                 let mut stream_broken = false;
@@ -132,7 +135,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                stream_handle.abort();
+                // Signal the stream reader to stop gracefully
+                stream_cancel.cancel();
+                // Wait briefly for the reader to finish processing
+                let _ =
+                    tokio::time::timeout(std::time::Duration::from_secs(2), stream_handle).await;
+
                 if shutdown {
                     // Drop the outbound sender to close the gRPC stream cleanly
                     drop(outbound_tx);

@@ -23,10 +23,10 @@ type AgentService struct {
 	pulsev1.UnimplementedAgentServiceServer
 	repo     repository.Repository
 	streams  *StreamRegistry
-	notifier *alerts.Notifier
+	notifier alerts.Notifier
 }
 
-func NewAgentService(repo repository.Repository, notifier *alerts.Notifier) *AgentService {
+func NewAgentService(repo repository.Repository, notifier alerts.Notifier) *AgentService {
 	return &AgentService{
 		repo:     repo,
 		streams:  NewStreamRegistry(),

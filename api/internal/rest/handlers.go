@@ -213,36 +213,7 @@ func (h *Handler) createCommand(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errBadRequest(err.Error()))
 		return
 	}
-
-	reqID := requestID(c)
-	cmd := repository.Command{
-		ID:        uuid.New().String(),
-		AgentName: req.NodeName,
-		Type:      req.Type,
-		Payload:   req.Payload,
-		Status:    constants.StatusPending,
-	}
-	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
-		slog.Error("create command failed", "error", err, "request_id", reqID)
-		c.JSON(http.StatusInternalServerError, errInternal("failed to create command"))
-		return
-	}
-
-	slog.Debug("command created", "command_id", cmd.ID, "type", req.Type, "node", req.NodeName, "request_id", reqID)
-
-	if h.sender != nil {
-		if err := h.sender.SendCommand(req.NodeName, cmd.ID, cmd.Type, cmd.Payload); err != nil {
-			slog.Info("agent not connected, command queued", "node", req.NodeName, "id", cmd.ID, "request_id", reqID)
-		}
-	}
-
-	c.JSON(http.StatusAccepted, gin.H{
-		"data": gin.H{
-			"command_id": cmd.ID,
-			"status":     constants.StatusPending,
-			"request_id": reqID,
-		},
-	})
+	h.sendAgentCommand(c, req.NodeName, req.Type, req.Payload)
 }
 
 func (h *Handler) getCommand(c *gin.Context) {
