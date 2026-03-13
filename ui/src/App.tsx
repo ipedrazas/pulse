@@ -6,6 +6,7 @@ import { ContainerTable } from './components/ContainerTable'
 import { SearchBar } from './components/SearchBar'
 import { Spinner } from './components/Spinner'
 import { EmptyState } from './components/EmptyState'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { usePolling } from './hooks/usePolling'
 
 export default function App() {
@@ -43,16 +44,18 @@ export default function App() {
           {nodes.data && nodes.data.length === 0 && <EmptyState message="No agents connected" />}
 
           {nodes.data && nodes.data.length > 0 && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {nodes.data.map((agent) => (
-                <NodeCard
-                  key={agent.name}
-                  agent={agent}
-                  selected={selectedNode === agent.name}
-                  onClick={() => setSelectedNode(selectedNode === agent.name ? null : agent.name)}
-                />
-              ))}
-            </div>
+            <ErrorBoundary>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {nodes.data.map((agent) => (
+                  <NodeCard
+                    key={agent.name}
+                    agent={agent}
+                    selected={selectedNode === agent.name}
+                    onClick={() => setSelectedNode(selectedNode === agent.name ? null : agent.name)}
+                  />
+                ))}
+              </div>
+            </ErrorBoundary>
           )}
         </section>
 
@@ -84,7 +87,9 @@ export default function App() {
             )}
 
           {containers.data?.containers && containers.data.containers.length > 0 && (
-            <ContainerTable containers={containers.data.containers} search={search} />
+            <ErrorBoundary>
+              <ContainerTable containers={containers.data.containers} search={search} />
+            </ErrorBoundary>
           )}
         </section>
       </main>

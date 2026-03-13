@@ -8,16 +8,35 @@ export function usePolling<T>(
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const timerRef = useRef<ReturnType<typeof setInterval>>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const inflightRef = useRef(false)
 
   const doFetch = useCallback(async () => {
+    // Skip if a fetch is already in flight (deduplication)
+    if (inflightRef.current) return
+    inflightRef.current = true
+
+    // Abort any prior in-flight request
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       const result = await fetcher()
-      setData(result)
-      setError(null)
+      // Only update state if this request wasn't aborted
+      if (!controller.signal.aborted) {
+        setData(result)
+        setError(null)
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      if (!controller.signal.aborted) {
+        setError(e instanceof Error ? e.message : 'Unknown error')
+      }
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
+      inflightRef.current = false
     }
   }, [fetcher])
 
@@ -26,6 +45,7 @@ export function usePolling<T>(
     timerRef.current = setInterval(doFetch, intervalMs)
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
+      abortRef.current?.abort()
     }
   }, [doFetch, intervalMs])
 

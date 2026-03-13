@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Container } from '../types'
 import {
   stopContainer,
@@ -18,6 +18,15 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
   const [showLogs, setShowLogs] = useState(false)
   const [actionState, setActionState] = useState<Record<string, ActionState>>({})
   const [actionError, setActionError] = useState<string | null>(null)
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  // Clean up all pending poll timers on unmount
+  useEffect(() => {
+    return () => {
+      for (const t of timersRef.current) clearTimeout(t)
+      timersRef.current.clear()
+    }
+  }, [])
 
   async function runAction(name: string, action: () => Promise<{ command_id: string }>) {
     setActionState((s) => ({ ...s, [name]: 'pending' }))
@@ -26,17 +35,24 @@ export function ContainerDetail({ container }: ContainerDetailProps) {
       const { command_id } = await action()
       // Poll for completion
       const poll = async () => {
-        const result = await getCommandResult(command_id)
-        if (result.status === 'completed') {
-          setActionState((s) => ({ ...s, [name]: 'success' }))
-        } else if (result.status === 'failed') {
+        try {
+          const result = await getCommandResult(command_id)
+          if (result.status === 'completed') {
+            setActionState((s) => ({ ...s, [name]: 'success' }))
+          } else if (result.status === 'failed') {
+            setActionState((s) => ({ ...s, [name]: 'error' }))
+            setActionError(result.result || 'Command failed')
+          } else {
+            const t = setTimeout(poll, 1000)
+            timersRef.current.add(t)
+          }
+        } catch (err) {
           setActionState((s) => ({ ...s, [name]: 'error' }))
-          setActionError(result.result || 'Command failed')
-        } else {
-          setTimeout(poll, 1000)
+          setActionError(err instanceof Error ? err.message : 'Poll failed')
         }
       }
-      setTimeout(poll, 500)
+      const t = setTimeout(poll, 500)
+      timersRef.current.add(t)
     } catch (err) {
       setActionState((s) => ({ ...s, [name]: 'error' }))
       setActionError(err instanceof Error ? err.message : 'Action failed')
