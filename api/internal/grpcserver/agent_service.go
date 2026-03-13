@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ipedrazas/pulse/api/internal/alerts"
+	"github.com/ipedrazas/pulse/api/internal/constants"
 	"github.com/ipedrazas/pulse/api/internal/metrics"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
@@ -85,7 +86,7 @@ func (s *AgentService) StreamLink(stream pulsev1.AgentService_StreamLinkServer) 
 
 func (s *AgentService) disconnectAgent(ctx context.Context, nodeName string) {
 	slog.Info("agent disconnected", "node", nodeName)
-	_ = s.repo.SetAgentStatus(ctx, nodeName, "offline")
+	_ = s.repo.SetAgentStatus(ctx, nodeName, constants.AgentOffline)
 	s.streams.Remove(nodeName)
 	metrics.ConnectedAgents.Dec()
 	s.notifier.AgentOffline(nodeName)
@@ -101,7 +102,7 @@ func (s *AgentService) handleHeartbeat(
 	now := time.Now()
 	agent := repository.Agent{
 		Name:     nodeName,
-		Status:   "online",
+		Status:   constants.AgentOnline,
 		Version:  hb.AgentVersion,
 		LastSeen: &now,
 	}
@@ -184,12 +185,12 @@ func (s *AgentService) handleCommandResult(ctx context.Context, result *pulsev1.
 	if result.Error != "" {
 		output = result.Error
 	}
-	status := "failed"
+	cmdStatus := constants.StatusFailed
 	if result.Success {
-		status = "completed"
+		cmdStatus = constants.StatusCompleted
 	}
 	slog.Debug("command result received", "command_id", result.CommandId, "node", result.NodeName, "success", result.Success)
-	metrics.CommandsTotal.WithLabelValues("result", status).Inc()
+	metrics.CommandsTotal.WithLabelValues("result", cmdStatus).Inc()
 	if err := s.repo.CompleteCommand(ctx, result.CommandId, output, result.Success); err != nil {
 		slog.Error("complete command failed", "id", result.CommandId, "error", err)
 	}
@@ -241,37 +242,37 @@ func protoToContainer(ci *pulsev1.ContainerInfo, agentName string) repository.Co
 func commandToProto(cmd repository.Command) (*pulsev1.ServerCommand, error) {
 	sc := &pulsev1.ServerCommand{CommandId: cmd.ID}
 	switch cmd.Type {
-	case "run_container":
+	case constants.CmdRunContainer:
 		var rc pulsev1.RunContainer
 		if err := json.Unmarshal(cmd.Payload, &rc); err != nil {
 			return nil, err
 		}
 		sc.Payload = &pulsev1.ServerCommand_RunContainer{RunContainer: &rc}
-	case "stop_container":
+	case constants.CmdStopContainer:
 		var sc2 pulsev1.StopContainer
 		if err := json.Unmarshal(cmd.Payload, &sc2); err != nil {
 			return nil, err
 		}
 		sc.Payload = &pulsev1.ServerCommand_StopContainer{StopContainer: &sc2}
-	case "pull_image":
+	case constants.CmdPullImage:
 		var pi pulsev1.PullImage
 		if err := json.Unmarshal(cmd.Payload, &pi); err != nil {
 			return nil, err
 		}
 		sc.Payload = &pulsev1.ServerCommand_PullImage{PullImage: &pi}
-	case "compose_up":
+	case constants.CmdComposeUp:
 		var cu pulsev1.ComposeUp
 		if err := json.Unmarshal(cmd.Payload, &cu); err != nil {
 			return nil, err
 		}
 		sc.Payload = &pulsev1.ServerCommand_ComposeUp{ComposeUp: &cu}
-	case "request_logs":
+	case constants.CmdRequestLogs:
 		var rl pulsev1.RequestLogs
 		if err := json.Unmarshal(cmd.Payload, &rl); err != nil {
 			return nil, err
 		}
 		sc.Payload = &pulsev1.ServerCommand_RequestLogs{RequestLogs: &rl}
-	case "restart_container":
+	case constants.CmdRestartContainer:
 		var rc pulsev1.RestartContainer
 		if err := json.Unmarshal(cmd.Payload, &rc); err != nil {
 			return nil, err

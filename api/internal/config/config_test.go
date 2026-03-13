@@ -141,3 +141,38 @@ func TestLogLevel_Default(t *testing.T) {
 		t.Errorf("LogLevel = %v, want info", cfg.LogLevel)
 	}
 }
+
+func TestValidate_DefaultsAreValid(t *testing.T) {
+	for _, k := range []string{"PULSE_DB_URL", "PULSE_GRPC_ADDR", "PULSE_REST_ADDR", "PULSE_TLS_CERT", "PULSE_TLS_KEY", "PULSE_TLS_CA", "PULSE_STALE_THRESHOLD"} {
+		t.Setenv(k, "")
+	}
+	cfg := Load()
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("defaults should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_BadDBURL(t *testing.T) {
+	t.Setenv("PULSE_DB_URL", "mysql://bad")
+	cfg := Load()
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for non-postgres DB URL")
+	}
+}
+
+func TestValidate_BadGRPCAddr(t *testing.T) {
+	t.Setenv("PULSE_GRPC_ADDR", "not-a-host-port")
+	cfg := Load()
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid GRPC address")
+	}
+}
+
+func TestValidate_TLSCertWithoutKey(t *testing.T) {
+	t.Setenv("PULSE_TLS_CERT", "/cert.pem")
+	t.Setenv("PULSE_TLS_KEY", "")
+	cfg := Load()
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error when TLS cert set without key")
+	}
+}

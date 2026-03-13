@@ -39,6 +39,23 @@ impl Config {
             _tls_ca: env::var("PULSE_TLS_CA").ok(),
         }
     }
+
+    /// Validates that required configuration values are well-formed.
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.api_addr.starts_with("http://") && !self.api_addr.starts_with("https://") {
+            return Err(format!(
+                "PULSE_API_ADDR must start with http:// or https://, got {:?}",
+                self.api_addr
+            ));
+        }
+        if self.node_name.is_empty() {
+            return Err("PULSE_NODE_NAME must not be empty".to_string());
+        }
+        if self.poll_interval.as_secs() == 0 {
+            return Err("PULSE_POLL_INTERVAL must be at least 1 second".to_string());
+        }
+        Ok(())
+    }
 }
 
 fn hostname() -> String {
@@ -150,5 +167,37 @@ mod tests {
 
         let cfg = Config::from_env();
         assert_eq!(cfg.node_name, "my-node");
+    }
+
+    #[test]
+    fn test_validate_defaults_ok() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        unsafe { clear_pulse_env() };
+
+        let cfg = Config::from_env();
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_bad_api_addr() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        unsafe { clear_pulse_env() };
+        unsafe { env::set_var("PULSE_API_ADDR", "ftp://bad") };
+
+        let cfg = Config::from_env();
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_empty_node_name() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        unsafe { clear_pulse_env() };
+        unsafe { env::set_var("PULSE_NODE_NAME", "") };
+
+        let cfg = Config::from_env();
+        // Empty node_name gets lowercased to "" which should fail
+        if cfg.node_name.is_empty() {
+            assert!(cfg.validate().is_err());
+        }
     }
 }

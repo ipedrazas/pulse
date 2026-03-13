@@ -1,9 +1,10 @@
 import type { Agent, Container, ContainerListResponse, NodeDetailResponse } from '../types'
 
 const BASE = '/api/v1'
+const DEFAULT_TIMEOUT_MS = 15_000
 
 async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) })
   if (!res.ok) {
     const body = await res.text()
     throw new Error(`${res.status}: ${body}`)
@@ -12,7 +13,8 @@ async function fetchJSON<T>(url: string): Promise<T> {
 }
 
 export async function getNodes(): Promise<Agent[]> {
-  return fetchJSON<Agent[]>(`${BASE}/nodes`)
+  const res = await fetchJSON<{ data: Agent[] }>(`${BASE}/nodes`)
+  return res.data
 }
 
 export async function getNode(name: string): Promise<NodeDetailResponse> {
@@ -32,7 +34,8 @@ export async function getContainers(
 }
 
 export async function getContainer(id: string): Promise<Container> {
-  return fetchJSON<Container>(`${BASE}/containers/${encodeURIComponent(id)}`)
+  const res = await fetchJSON<{ data: Container }>(`${BASE}/containers/${encodeURIComponent(id)}`)
+  return res.data
 }
 
 export async function getHealth(): Promise<{ status: string }> {
@@ -53,27 +56,34 @@ export async function requestContainerLogs(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tail }),
+    signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
   })
   if (!res.ok) {
     const body = await res.text()
     throw new Error(`${res.status}: ${body}`)
   }
-  return res.json() as Promise<CommandResponse>
+  const json = (await res.json()) as { data: CommandResponse }
+  return json.data
 }
 
 export async function getCommandResult(commandId: string): Promise<CommandResponse> {
-  return fetchJSON<CommandResponse>(`${BASE}/commands/${encodeURIComponent(commandId)}`)
+  const res = await fetchJSON<{ data: CommandResponse }>(
+    `${BASE}/commands/${encodeURIComponent(commandId)}`,
+  )
+  return res.data
 }
 
 async function postContainerAction(containerId: string, action: string): Promise<CommandResponse> {
   const res = await fetch(`${BASE}/containers/${encodeURIComponent(containerId)}/${action}`, {
     method: 'POST',
+    signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
   })
   if (!res.ok) {
     const body = await res.text()
     throw new Error(`${res.status}: ${body}`)
   }
-  return res.json() as Promise<CommandResponse>
+  const json = (await res.json()) as { data: CommandResponse }
+  return json.data
 }
 
 export function stopContainer(containerId: string): Promise<CommandResponse> {

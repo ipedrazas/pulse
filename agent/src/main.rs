@@ -16,6 +16,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_env_filter(log_filter).init();
 
     let cfg = config::Config::from_env();
+    if let Err(e) = cfg.validate() {
+        error!("invalid configuration: {}", e);
+        std::process::exit(1);
+    }
     info!(
         node_name = %cfg.node_name,
         api_addr = %cfg.api_addr,

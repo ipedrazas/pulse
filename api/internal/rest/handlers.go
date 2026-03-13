@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/ipedrazas/pulse/api/internal/constants"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	"github.com/ipedrazas/pulse/api/internal/version"
 )
@@ -105,7 +106,7 @@ func (h *Handler) listNodes(c *gin.Context) {
 		n.ContainerCount = count
 		nodes = append(nodes, n)
 	}
-	c.JSON(http.StatusOK, nodes)
+	c.JSON(http.StatusOK, gin.H{"data": nodes})
 }
 
 func (h *Handler) getNode(c *gin.Context) {
@@ -129,8 +130,10 @@ func (h *Handler) getNode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"agent":      agent,
-		"containers": containers,
+		"data": gin.H{
+			"node":       agent,
+			"containers": containers,
+		},
 	})
 }
 
@@ -140,7 +143,7 @@ func (h *Handler) deleteNode(c *gin.Context) {
 		c.JSON(http.StatusNotFound, errNotFound("node not found"))
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"deleted": name})
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"deleted": name}})
 }
 
 func (h *Handler) listContainers(c *gin.Context) {
@@ -169,10 +172,10 @@ func (h *Handler) listContainers(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"containers": containers,
-		"total":      total,
-		"page_size":  pageSize,
-		"offset":     offset,
+		"data":      containers,
+		"total":     total,
+		"page_size": pageSize,
+		"offset":    offset,
 	})
 }
 
@@ -188,7 +191,7 @@ func (h *Handler) getContainer(c *gin.Context) {
 		c.JSON(http.StatusNotFound, errNotFound("container not found"))
 		return
 	}
-	c.JSON(http.StatusOK, container)
+	c.JSON(http.StatusOK, gin.H{"data": container})
 }
 
 func requestID(c *gin.Context) string {
@@ -217,7 +220,7 @@ func (h *Handler) createCommand(c *gin.Context) {
 		AgentName: req.NodeName,
 		Type:      req.Type,
 		Payload:   req.Payload,
-		Status:    "pending",
+		Status:    constants.StatusPending,
 	}
 	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
 		slog.Error("create command failed", "error", err, "request_id", reqID)
@@ -234,9 +237,11 @@ func (h *Handler) createCommand(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"command_id": cmd.ID,
-		"status":     "pending",
-		"request_id": reqID,
+		"data": gin.H{
+			"command_id": cmd.ID,
+			"status":     constants.StatusPending,
+			"request_id": reqID,
+		},
 	})
 }
 
@@ -254,9 +259,11 @@ func (h *Handler) getCommand(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"command_id": cmd.ID,
-		"status":     cmd.Status,
-		"result":     cmd.Result,
+		"data": gin.H{
+			"command_id": cmd.ID,
+			"status":     cmd.Status,
+			"result":     cmd.Result,
+		},
 	})
 }
 
@@ -268,7 +275,7 @@ func (h *Handler) sendAgentCommand(c *gin.Context, agentName, cmdType string, pa
 		AgentName: agentName,
 		Type:      cmdType,
 		Payload:   payload,
-		Status:    "pending",
+		Status:    constants.StatusPending,
 	}
 	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
 		slog.Error("create command failed", "error", err, "request_id", reqID)
@@ -285,9 +292,11 @@ func (h *Handler) sendAgentCommand(c *gin.Context, agentName, cmdType string, pa
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"command_id": cmd.ID,
-		"status":     "pending",
-		"request_id": reqID,
+		"data": gin.H{
+			"command_id": cmd.ID,
+			"status":     constants.StatusPending,
+			"request_id": reqID,
+		},
 	})
 }
 
@@ -326,7 +335,7 @@ func (h *Handler) requestContainerLogs(c *gin.Context) {
 		"tail":         req.Tail,
 		"follow":       false,
 	})
-	h.sendAgentCommand(c, container.AgentName, "request_logs", payload)
+	h.sendAgentCommand(c, container.AgentName, constants.CmdRequestLogs, payload)
 }
 
 func (h *Handler) stopContainer(c *gin.Context) {
@@ -338,7 +347,7 @@ func (h *Handler) stopContainer(c *gin.Context) {
 		"container_id":    container.ContainerID,
 		"timeout_seconds": 10,
 	})
-	h.sendAgentCommand(c, container.AgentName, "stop_container", payload)
+	h.sendAgentCommand(c, container.AgentName, constants.CmdStopContainer, payload)
 }
 
 func (h *Handler) restartContainer(c *gin.Context) {
@@ -350,7 +359,7 @@ func (h *Handler) restartContainer(c *gin.Context) {
 	// Compose containers: docker compose up -d --pull=always
 	if isComposeContainer(container) {
 		payload, _ := json.Marshal(composePayload(container))
-		h.sendAgentCommand(c, container.AgentName, "compose_up", payload)
+		h.sendAgentCommand(c, container.AgentName, constants.CmdComposeUp, payload)
 		return
 	}
 
@@ -358,7 +367,7 @@ func (h *Handler) restartContainer(c *gin.Context) {
 		"container_id":    container.ContainerID,
 		"timeout_seconds": 10,
 	})
-	h.sendAgentCommand(c, container.AgentName, "restart_container", payload)
+	h.sendAgentCommand(c, container.AgentName, constants.CmdRestartContainer, payload)
 }
 
 func (h *Handler) pullContainerImage(c *gin.Context) {
@@ -370,14 +379,14 @@ func (h *Handler) pullContainerImage(c *gin.Context) {
 	// Compose containers: docker compose up -d --pull=always
 	if isComposeContainer(container) {
 		payload, _ := json.Marshal(composePayload(container))
-		h.sendAgentCommand(c, container.AgentName, "compose_up", payload)
+		h.sendAgentCommand(c, container.AgentName, constants.CmdComposeUp, payload)
 		return
 	}
 
 	payload, _ := json.Marshal(map[string]any{
 		"image": container.Image,
 	})
-	h.sendAgentCommand(c, container.AgentName, "pull_image", payload)
+	h.sendAgentCommand(c, container.AgentName, constants.CmdPullImage, payload)
 }
 
 func isComposeContainer(c *repository.Container) bool {

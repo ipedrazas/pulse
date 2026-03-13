@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ipedrazas/pulse/api/internal/constants"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -138,8 +139,8 @@ func (r *PostgresRepository) DeleteAgent(ctx context.Context, name string) error
 func (r *PostgresRepository) MarkStaleAgents(ctx context.Context, threshold time.Duration) (int, error) {
 	cutoff := time.Now().Add(-threshold)
 	result, err := r.q.Exec(ctx, `
-		UPDATE agents SET status = 'lost'
-		WHERE status = 'online' AND last_seen < $1`, cutoff)
+		UPDATE agents SET status = $2
+		WHERE status = $3 AND last_seen < $1`, cutoff, constants.AgentLost, constants.AgentOnline)
 	if err != nil {
 		return 0, err
 	}
@@ -334,8 +335,8 @@ func (r *PostgresRepository) GetCommand(ctx context.Context, id string) (*Comman
 func (r *PostgresRepository) GetPendingCommands(ctx context.Context, agentName string) ([]Command, error) {
 	rows, err := r.q.Query(ctx, `
 		SELECT id, agent_name, type, payload, status, result, created_at, completed_at
-		FROM commands WHERE agent_name = $1 AND status = 'pending'
-		ORDER BY created_at`, agentName)
+		FROM commands WHERE agent_name = $1 AND status = $2
+		ORDER BY created_at`, agentName, constants.StatusPending)
 	if err != nil {
 		return nil, err
 	}
@@ -353,9 +354,9 @@ func (r *PostgresRepository) GetPendingCommands(ctx context.Context, agentName s
 }
 
 func (r *PostgresRepository) CompleteCommand(ctx context.Context, id, result string, success bool) error {
-	status := "failed"
+	status := constants.StatusFailed
 	if success {
-		status = "completed"
+		status = constants.StatusCompleted
 	}
 	now := time.Now()
 	_, err := r.q.Exec(ctx, `

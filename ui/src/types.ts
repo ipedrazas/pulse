@@ -42,13 +42,15 @@ export interface Container {
 }
 
 export interface ContainerListResponse {
-  containers: Container[]
+  data: Container[]
   total: number
   page_size: number
   offset: number
 }
 
 export interface NodeDetailResponse {
-  agent: Agent
-  containers: Container[]
+  data: {
+    node: Agent
+    containers: Container[]
+  }
 }

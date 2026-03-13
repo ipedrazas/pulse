@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ipedrazas/pulse/api/internal/constants"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"google.golang.org/grpc/codes"
@@ -147,7 +148,7 @@ func (s *CLIService) SendCommand(ctx context.Context, req *pulsev1.SendCommandRe
 		AgentName: req.NodeName,
 		Type:      cmdType,
 		Payload:   payload,
-		Status:    "pending",
+		Status:    constants.StatusPending,
 		CreatedAt: time.Now(),
 	}
 	if err := s.repo.CreateCommand(ctx, cmd); err != nil {
@@ -187,25 +188,25 @@ func marshalCommand(req *pulsev1.SendCommandRequest) (string, []byte, error) {
 	switch cmd := req.Command.(type) {
 	case *pulsev1.SendCommandRequest_RunContainer:
 		data, err := json.Marshal(cmd.RunContainer)
-		return "run_container", data, err
+		return constants.CmdRunContainer, data, err
 	case *pulsev1.SendCommandRequest_StopContainer:
 		data, err := json.Marshal(cmd.StopContainer)
-		return "stop_container", data, err
+		return constants.CmdStopContainer, data, err
 	case *pulsev1.SendCommandRequest_PullImage:
 		data, err := json.Marshal(cmd.PullImage)
-		return "pull_image", data, err
+		return constants.CmdPullImage, data, err
 	case *pulsev1.SendCommandRequest_ComposeUp:
 		data, err := json.Marshal(cmd.ComposeUp)
-		return "compose_up", data, err
+		return constants.CmdComposeUp, data, err
 	case *pulsev1.SendCommandRequest_SendFile:
 		data, err := json.Marshal(cmd.SendFile)
-		return "send_file", data, err
+		return constants.CmdSendFile, data, err
 	case *pulsev1.SendCommandRequest_RequestLogs:
 		data, err := json.Marshal(cmd.RequestLogs)
-		return "request_logs", data, err
+		return constants.CmdRequestLogs, data, err
 	case *pulsev1.SendCommandRequest_RestartContainer:
 		data, err := json.Marshal(cmd.RestartContainer)
-		return "restart_container", data, err
+		return constants.CmdRestartContainer, data, err
 	default:
 		return "", nil, status.Errorf(codes.InvalidArgument, "unknown command type")
 	}

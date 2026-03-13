@@ -17,10 +17,32 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-func NewPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
+// PoolConfig holds tunables for the database connection pool.
+type PoolConfig struct {
+	MaxConns          int32
+	MinConns          int32
+	MaxIdleTime       time.Duration
+	HealthCheckPeriod time.Duration
+}
+
+func NewPool(ctx context.Context, dbURL string, pc *PoolConfig) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse db config: %w", err)
+	}
+	if pc != nil {
+		if pc.MaxConns > 0 {
+			config.MaxConns = pc.MaxConns
+		}
+		if pc.MinConns > 0 {
+			config.MinConns = pc.MinConns
+		}
+		if pc.MaxIdleTime > 0 {
+			config.MaxConnIdleTime = pc.MaxIdleTime
+		}
+		if pc.HealthCheckPeriod > 0 {
+			config.HealthCheckPeriod = pc.HealthCheckPeriod
+		}
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
