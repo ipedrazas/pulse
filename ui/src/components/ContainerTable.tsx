@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { Container } from '../types'
 import { formatUptime } from '../utils/format'
@@ -54,15 +54,24 @@ export function ContainerTable({ containers, search }: ContainerTableProps) {
     }
   }
 
-  const virtualizer = useVirtualizer({
-    count: sorted.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: (index) => {
+  const estimateSize = useCallback(
+    (index: number) => {
       const c = sorted[index]
       return c && expandedId === c.container_id ? ROW_HEIGHT + DETAIL_HEIGHT : ROW_HEIGHT
     },
+    [sorted, expandedId],
+  )
+
+  const virtualizer = useVirtualizer({
+    count: sorted.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize,
     overscan: 10,
   })
+
+  useEffect(() => {
+    virtualizer.measure()
+  }, [expandedId])
 
   return (
     <>
@@ -97,47 +106,16 @@ export function ContainerTable({ containers, search }: ContainerTableProps) {
 
       {/* Desktop virtualised table view */}
       <div className="hidden sm:block rounded-lg border border-gray-800">
-        <table className="w-full" role="table" aria-label="Container table">
-          <thead className="bg-gray-900">
-            <tr>
-              <SortHeader
-                label="Name"
-                field="name"
-                sortKey={sortKey}
-                sortAsc={sortAsc}
-                onSort={handleSort}
-              />
-              <SortHeader
-                label="Image"
-                field="image"
-                sortKey={sortKey}
-                sortAsc={sortAsc}
-                onSort={handleSort}
-              />
-              <SortHeader
-                label="Status"
-                field="status"
-                sortKey={sortKey}
-                sortAsc={sortAsc}
-                onSort={handleSort}
-              />
-              <SortHeader
-                label="Node"
-                field="agent_name"
-                sortKey={sortKey}
-                sortAsc={sortAsc}
-                onSort={handleSort}
-              />
-              <SortHeader
-                label="Uptime"
-                field="uptime_seconds"
-                sortKey={sortKey}
-                sortAsc={sortAsc}
-                onSort={handleSort}
-              />
-            </tr>
-          </thead>
-        </table>
+        {/* Fixed-layout header */}
+        <div className="bg-gray-900">
+          <div className="flex" role="row">
+            <SortHeader label="Name" field="name" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="25%" />
+            <SortHeader label="Image" field="image" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="35%" />
+            <SortHeader label="Status" field="status" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="12%" />
+            <SortHeader label="Node" field="agent_name" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="18%" />
+            <SortHeader label="Uptime" field="uptime_seconds" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="10%" />
+          </div>
+        </div>
 
         <div ref={parentRef} className="overflow-y-auto bg-gray-950" style={{ maxHeight: '70vh' }}>
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
@@ -156,34 +134,28 @@ export function ContainerTable({ containers, search }: ContainerTableProps) {
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <table className="w-full">
-                    <tbody>
-                      <tr
-                        className="cursor-pointer hover:bg-gray-900 border-b border-gray-800"
-                        style={{ height: `${ROW_HEIGHT}px` }}
-                        onClick={() => setExpandedId(isExpanded ? null : c.container_id)}
-                        aria-expanded={isExpanded}
-                        role="row"
-                      >
-                        <td className="px-4 py-3 text-sm text-white">{c.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-300 font-mono">{c.image}</td>
-                        <td className="px-4 py-3">
-                          <StatusBadge status={c.status} />
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-400">{c.agent_name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-400">
-                          {formatUptime(c.uptime_seconds)}
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={5} className="bg-gray-900 px-4 py-4">
-                            <ContainerDetail container={c} />
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                  <div
+                    className="flex items-center cursor-pointer hover:bg-gray-900 border-b border-gray-800"
+                    style={{ height: `${ROW_HEIGHT}px` }}
+                    onClick={() => setExpandedId(isExpanded ? null : c.container_id)}
+                    aria-expanded={isExpanded}
+                    role="row"
+                  >
+                    <div className="px-4 py-3 text-sm text-white truncate" style={{ width: '25%' }} title={c.name}>{c.name}</div>
+                    <div className="px-4 py-3 text-sm text-gray-300 font-mono truncate" style={{ width: '35%' }} title={c.image}>{c.image}</div>
+                    <div className="px-4 py-3" style={{ width: '12%' }}>
+                      <StatusBadge status={c.status} />
+                    </div>
+                    <div className="px-4 py-3 text-sm text-gray-400 truncate" style={{ width: '18%' }} title={c.agent_name}>{c.agent_name}</div>
+                    <div className="px-4 py-3 text-sm text-gray-400" style={{ width: '10%' }}>
+                      {formatUptime(c.uptime_seconds)}
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <div className="bg-gray-900 px-4 py-4 border-b border-gray-800">
+                      <ContainerDetail container={c} />
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -200,23 +172,26 @@ function SortHeader({
   sortKey,
   sortAsc,
   onSort,
+  width,
 }: {
   label: string
   field: SortKey
   sortKey: SortKey
   sortAsc: boolean
   onSort: (key: SortKey) => void
+  width: string
 }) {
   const arrow = sortKey === field ? (sortAsc ? ' \u2191' : ' \u2193') : ''
   return (
-    <th
+    <div
       className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400 hover:text-white"
+      style={{ width }}
       onClick={() => onSort(field)}
       aria-sort={sortKey === field ? (sortAsc ? 'ascending' : 'descending') : 'none'}
       role="columnheader"
     >
       {label}
       {arrow}
-    </th>
+    </div>
   )
 }
