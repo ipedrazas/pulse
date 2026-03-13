@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -48,6 +49,10 @@ func main() {
 	defer pool.Close()
 
 	repo := repository.NewPostgresRepository(pool)
+
+	// Database health monitoring
+	var dbHealthy atomic.Bool
+	db.StartHealthCheck(ctx, pool, 30*time.Second, &dbHealthy)
 
 	// Alerts
 	notifier := alerts.NewNotifier(cfg.WebhookURL)

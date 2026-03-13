@@ -2,6 +2,7 @@ name: pulse
 services:
   db:
     image: timescale/timescaledb:latest-pg17
+    restart: unless-stopped
     environment:
       POSTGRES_USER: pulse
       POSTGRES_PASSWORD: pulse
@@ -20,6 +21,7 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
+    restart: unless-stopped
     environment:
       PULSE_DB_URL: postgres://pulse:pulse@db:5432/pulse?sslmode=disable
       PULSE_GRPC_ADDR: :9090
@@ -49,6 +51,7 @@ services:
     build:
       context: .
       dockerfile: ui/Dockerfile
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:

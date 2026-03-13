@@ -191,7 +191,7 @@ tasks:
     desc: Lint UI code
     dir: ui
     cmds:
-      - npx biome check .
+      - npx eslint .
 
   ui:test:
     desc: Run UI tests

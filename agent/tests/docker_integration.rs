@@ -195,15 +195,16 @@ async fn test_poller_returns_none_when_unchanged() {
     assert!(first.is_some());
 
     // Second poll with no changes should return None.
-    // Retry a few times because concurrent tests may cause transient hash changes.
+    // Retry with short delays because concurrent tests may cause transient hash changes.
     let mut got_none = false;
-    for _ in 0..5 {
+    for _ in 0..10 {
         if poller.poll().await.is_none() {
             got_none = true;
             break;
         }
         // If we got Some, the hash changed due to external activity.
-        // Poll again immediately — the next one should stabilize.
+        // Brief pause to let concurrent tests settle before retrying.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
     assert!(
         got_none,

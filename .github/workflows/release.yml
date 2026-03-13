@@ -192,6 +192,12 @@ jobs:
           pattern: pulse-*
           merge-multiple: true
 
+      - name: Generate SHA256 checksums
+        working-directory: artifacts
+        run: |
+          sha256sum pulse-* > checksums-sha256.txt
+          cat checksums-sha256.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

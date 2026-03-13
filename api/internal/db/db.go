@@ -5,6 +5,8 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -29,6 +31,41 @@ func NewPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 	return pool, nil
+}
+
+// StartHealthCheck runs a background goroutine that periodically pings the
+// database and logs connectivity changes. It stops when ctx is cancelled.
+// The healthy atomic can be read by callers to check current status.
+func StartHealthCheck(ctx context.Context, pool *pgxpool.Pool, interval time.Duration, healthy *atomic.Bool) {
+	healthy.Store(true)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		wasHealthy := true
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				err := pool.Ping(pingCtx)
+				cancel()
+				if err != nil {
+					healthy.Store(false)
+					if wasHealthy {
+						slog.Error("database health check failed", "error", err)
+					}
+					wasHealthy = false
+				} else {
+					healthy.Store(true)
+					if !wasHealthy {
+						slog.Info("database connection recovered")
+					}
+					wasHealthy = true
+				}
+			}
+		}
+	}()
 }
 
 func RunMigrations(dbURL string) error {

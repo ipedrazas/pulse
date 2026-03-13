@@ -7,6 +7,7 @@ use bollard::image::CreateImageOptions;
 use futures_util::StreamExt;
 use tracing::{error, info, warn};
 
+use crate::error::AgentError;
 use crate::proto::pulse::v1::{
     CommandResult, RequestLogs, RestartContainer, RunContainer, ServerCommand, StopContainer,
     server_command,
@@ -41,7 +42,7 @@ fn find_docker_cli() -> PathBuf {
 }
 
 impl Executor {
-    pub fn new(node_name: String) -> Result<Self, bollard::errors::Error> {
+    pub fn new(node_name: String) -> Result<Self, AgentError> {
         let docker = Docker::connect_with_local_defaults()?;
         let docker_cli = find_docker_cli();
         info!("docker CLI resolved to {}", docker_cli.display());
@@ -56,34 +57,53 @@ impl Executor {
         let command_id = cmd.command_id.clone();
         let start = std::time::Instant::now();
 
-        let (success, output, err_msg) = match &cmd.payload {
+        let result = match &cmd.payload {
             Some(server_command::Payload::RunContainer(rc)) => self.run_container(rc).await,
             Some(server_command::Payload::StopContainer(sc)) => self.stop_container(sc).await,
             Some(server_command::Payload::PullImage(pi)) => self.pull_image(&pi.image).await,
             Some(server_command::Payload::ComposeUp(cu)) => self.compose_up(cu).await,
             Some(server_command::Payload::RequestLogs(rl)) => self.request_logs(rl).await,
             Some(server_command::Payload::RestartContainer(rc)) => self.restart_container(rc).await,
-            _ => (false, String::new(), "unsupported command".to_string()),
+            _ => Err(AgentError::UnsupportedCommand),
         };
 
         let duration_ms = start.elapsed().as_millis() as i64;
 
-        CommandResult {
-            command_id,
-            node_name: self.node_name.clone(),
-            success,
-            output,
-            error: err_msg,
-            duration_ms,
+        match result {
+            Ok(output) => CommandResult {
+                command_id,
+                node_name: self.node_name.clone(),
+                success: true,
+                output,
+                error: String::new(),
+                duration_ms,
+            },
+            Err(e) => {
+                let (output, err_msg) = match &e {
+                    AgentError::SubprocessFailed { stdout, stderr } => {
+                        (stdout.clone(), stderr.clone())
+                    }
+                    _ => (String::new(), e.to_string()),
+                };
+                CommandResult {
+                    command_id,
+                    node_name: self.node_name.clone(),
+                    success: false,
+                    output,
+                    error: err_msg,
+                    duration_ms,
+                }
+            }
         }
     }
 
-    async fn run_container(&self, rc: &RunContainer) -> (bool, String, String) {
+    async fn run_container(&self, rc: &RunContainer) -> Result<String, AgentError> {
         // Pull the image first
-        let (pull_ok, _, pull_err) = self.pull_image(&rc.image).await;
-        if !pull_ok {
-            return (false, String::new(), format!("pull failed: {}", pull_err));
-        }
+        self.pull_image(&rc.image).await.map_err(|e| {
+            AgentError::Docker(bollard::errors::Error::IOError {
+                err: std::io::Error::other(format!("pull failed: {e}")),
+            })
+        })?;
 
         let env: Vec<String> = rc.env.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
 
@@ -144,25 +164,15 @@ impl Executor {
             platform: None,
         });
 
-        match self.docker.create_container(options, config).await {
-            Ok(resp) => match self.docker.start_container::<String>(&resp.id, None).await {
-                Ok(_) => {
-                    info!("started container {}", resp.id);
-                    (true, resp.id, String::new())
-                }
-                Err(e) => {
-                    error!("failed to start container: {}", e);
-                    (false, String::new(), e.to_string())
-                }
-            },
-            Err(e) => {
-                error!("failed to create container: {}", e);
-                (false, String::new(), e.to_string())
-            }
-        }
+        let resp = self.docker.create_container(options, config).await?;
+        self.docker
+            .start_container::<String>(&resp.id, None)
+            .await?;
+        info!("started container {}", resp.id);
+        Ok(resp.id)
     }
 
-    async fn stop_container(&self, sc: &StopContainer) -> (bool, String, String) {
+    async fn stop_container(&self, sc: &StopContainer) -> Result<String, AgentError> {
         let timeout = if sc.timeout_seconds > 0 {
             sc.timeout_seconds
         } else {
@@ -170,23 +180,14 @@ impl Executor {
         };
 
         let options = StopContainerOptions { t: timeout.into() };
-        match self
-            .docker
+        self.docker
             .stop_container(&sc.container_id, Some(options))
-            .await
-        {
-            Ok(_) => {
-                info!("stopped container {}", sc.container_id);
-                (true, format!("stopped {}", sc.container_id), String::new())
-            }
-            Err(e) => {
-                error!("failed to stop container: {}", e);
-                (false, String::new(), e.to_string())
-            }
-        }
+            .await?;
+        info!("stopped container {}", sc.container_id);
+        Ok(format!("stopped {}", sc.container_id))
     }
 
-    async fn restart_container(&self, rc: &RestartContainer) -> (bool, String, String) {
+    async fn restart_container(&self, rc: &RestartContainer) -> Result<String, AgentError> {
         let timeout = if rc.timeout_seconds > 0 {
             rc.timeout_seconds
         } else {
@@ -196,27 +197,14 @@ impl Executor {
         let options = bollard::container::RestartContainerOptions {
             t: timeout as isize,
         };
-        match self
-            .docker
+        self.docker
             .restart_container(&rc.container_id, Some(options))
-            .await
-        {
-            Ok(_) => {
-                info!("restarted container {}", rc.container_id);
-                (
-                    true,
-                    format!("restarted {}", rc.container_id),
-                    String::new(),
-                )
-            }
-            Err(e) => {
-                error!("failed to restart container: {}", e);
-                (false, String::new(), e.to_string())
-            }
-        }
+            .await?;
+        info!("restarted container {}", rc.container_id);
+        Ok(format!("restarted {}", rc.container_id))
     }
 
-    async fn pull_image(&self, image: &str) -> (bool, String, String) {
+    async fn pull_image(&self, image: &str) -> Result<String, AgentError> {
         info!("pulling image {}", image);
         let options = CreateImageOptions {
             from_image: image,
@@ -233,15 +221,15 @@ impl Executor {
                 }
                 Err(e) => {
                     error!("pull failed: {}", e);
-                    return (false, String::new(), e.to_string());
+                    return Err(e.into());
                 }
             }
         }
         info!("pulled image {}", image);
-        (true, format!("pulled {}", image), String::new())
+        Ok(format!("pulled {}", image))
     }
 
-    async fn request_logs(&self, rl: &RequestLogs) -> (bool, String, String) {
+    async fn request_logs(&self, rl: &RequestLogs) -> Result<String, AgentError> {
         let tail = if rl.tail > 0 {
             rl.tail.to_string()
         } else {
@@ -264,15 +252,18 @@ impl Executor {
                 Ok(output) => lines.push(output.to_string()),
                 Err(e) => {
                     error!("log stream error: {}", e);
-                    return (false, lines.join(""), e.to_string());
+                    return Err(e.into());
                 }
             }
         }
 
-        (true, lines.join(""), String::new())
+        Ok(lines.join(""))
     }
 
-    async fn compose_up(&self, cu: &crate::proto::pulse::v1::ComposeUp) -> (bool, String, String) {
+    async fn compose_up(
+        &self,
+        cu: &crate::proto::pulse::v1::ComposeUp,
+    ) -> Result<String, AgentError> {
         let work_dir = &cu.project_dir;
 
         // Verify the working directory is accessible before running the command
@@ -283,7 +274,7 @@ impl Executor {
                 work_dir
             );
             error!("{}", msg);
-            return (false, String::new(), msg);
+            return Err(AgentError::NotFound(msg));
         }
 
         let mut cmd = tokio::process::Command::new(&self.docker_cli);
@@ -319,36 +310,16 @@ impl Executor {
             if work_dir.is_empty() { "." } else { work_dir },
         );
 
-        match cmd.output().await {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                if output.status.success() {
-                    info!("compose up succeeded");
-                    (true, stdout, String::new())
-                } else {
-                    error!("compose up failed: {}", stderr);
-                    (false, stdout, stderr)
-                }
-            }
-            Err(e) => {
-                error!(
-                    "compose up exec failed: {} (docker_cli={}, work_dir={})",
-                    e,
-                    self.docker_cli.display(),
-                    work_dir,
-                );
-                (
-                    false,
-                    String::new(),
-                    format!(
-                        "{} (docker_cli={}, work_dir={})",
-                        e,
-                        self.docker_cli.display(),
-                        work_dir,
-                    ),
-                )
-            }
+        let output = cmd.output().await?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        if output.status.success() {
+            info!("compose up succeeded");
+            Ok(stdout)
+        } else {
+            error!("compose up failed: {}", stderr);
+            Err(AgentError::SubprocessFailed { stdout, stderr })
         }
     }
 }

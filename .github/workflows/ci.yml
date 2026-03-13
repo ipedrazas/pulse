@@ -48,6 +48,11 @@ jobs:
       - name: Build CLI
         run: go build github.com/ipedrazas/pulse/cli/...
 
+      - name: Go vulnerability check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: Test API (unit)
         run: go test github.com/ipedrazas/pulse/api/... -v -count=1 -short
 
@@ -78,6 +83,11 @@ jobs:
       - name: Clippy
         run: cargo clippy -- -D warnings
 
+      - name: Cargo audit
+        run: |
+          cargo install cargo-audit
+          cargo audit
+
       - name: Test
         run: cargo test
 
@@ -103,6 +113,9 @@ jobs:
 
       - name: Type check
         run: npx tsc --noEmit
+
+      - name: npm audit
+        run: npm audit --omit=dev
 
       - name: Test
         run: npm test

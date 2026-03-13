@@ -8,6 +8,7 @@ pub mod proto {
 
 pub mod config;
 pub mod docker;
+pub mod error;
 pub mod executor;
 pub mod grpc;
 pub mod redact;

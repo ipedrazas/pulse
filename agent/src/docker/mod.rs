@@ -5,6 +5,7 @@ use bollard::container::ListContainersOptions;
 use sha2::{Digest, Sha256};
 use tracing::{error, warn};
 
+use crate::error::AgentError;
 use crate::proto::pulse::v1::{ContainerInfo, ContainerReport, PortMapping};
 use crate::redact;
 
@@ -16,10 +17,7 @@ pub struct DockerPoller {
 }
 
 impl DockerPoller {
-    pub fn new(
-        node_name: String,
-        redact_patterns: Vec<String>,
-    ) -> Result<Self, bollard::errors::Error> {
+    pub fn new(node_name: String, redact_patterns: Vec<String>) -> Result<Self, AgentError> {
         let client = Docker::connect_with_local_defaults()?;
         Ok(Self {
             client,
@@ -51,7 +49,7 @@ impl DockerPoller {
         })
     }
 
-    async fn list_containers(&self) -> Result<Vec<ContainerInfo>, bollard::errors::Error> {
+    async fn list_containers(&self) -> Result<Vec<ContainerInfo>, AgentError> {
         let options = ListContainersOptions::<String> {
             all: true,
             ..Default::default()

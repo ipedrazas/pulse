@@ -5,6 +5,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
 use tracing::{error, info, warn};
 
+use crate::error::AgentError;
 use crate::proto::pulse::v1::agent_service_client::AgentServiceClient;
 use crate::proto::pulse::v1::{AgentMessage, ServerCommand};
 
@@ -33,7 +34,7 @@ pub async fn connect_with_backoff(addr: &str) -> AgentServiceClient<Channel> {
 /// Establishes the bidirectional stream and returns channels for sending/receiving.
 pub async fn establish_stream(
     client: &mut AgentServiceClient<Channel>,
-) -> Result<(mpsc::Sender<AgentMessage>, tonic::Streaming<ServerCommand>), tonic::Status> {
+) -> Result<(mpsc::Sender<AgentMessage>, tonic::Streaming<ServerCommand>), AgentError> {
     let (tx, rx) = mpsc::channel::<AgentMessage>(64);
     let stream = ReceiverStream::new(rx);
 
