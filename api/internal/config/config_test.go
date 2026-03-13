@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -98,5 +99,45 @@ func TestParseDuration_Unset(t *testing.T) {
 	got := parseDuration("TEST_DUR", 3*time.Minute)
 	if got != 3*time.Minute {
 		t.Errorf("parseDuration = %v, want 3m (fallback)", got)
+	}
+}
+
+func TestParseLogLevel(t *testing.T) {
+	tests := []struct {
+		input string
+		want  slog.Level
+	}{
+		{"debug", slog.LevelDebug},
+		{"DEBUG", slog.LevelDebug},
+		{"info", slog.LevelInfo},
+		{"warn", slog.LevelWarn},
+		{"warning", slog.LevelWarn},
+		{"error", slog.LevelError},
+		{"", slog.LevelInfo},
+		{"invalid", slog.LevelInfo},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := parseLogLevel(tt.input)
+			if got != tt.want {
+				t.Errorf("parseLogLevel(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLogLevel_FromEnv(t *testing.T) {
+	t.Setenv("PULSE_LOG_LEVEL", "debug")
+	cfg := Load()
+	if cfg.LogLevel != slog.LevelDebug {
+		t.Errorf("LogLevel = %v, want debug", cfg.LogLevel)
+	}
+}
+
+func TestLogLevel_Default(t *testing.T) {
+	t.Setenv("PULSE_LOG_LEVEL", "")
+	cfg := Load()
+	if cfg.LogLevel != slog.LevelInfo {
+		t.Errorf("LogLevel = %v, want info", cfg.LogLevel)
 	}
 }

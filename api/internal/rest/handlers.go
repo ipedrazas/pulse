@@ -191,6 +191,15 @@ func (h *Handler) getContainer(c *gin.Context) {
 	c.JSON(http.StatusOK, container)
 }
 
+func requestID(c *gin.Context) string {
+	if v, ok := c.Get("request_id"); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 func (h *Handler) createCommand(c *gin.Context) {
 	var req struct {
 		NodeName string          `json:"node_name" binding:"required"`
@@ -202,6 +211,7 @@ func (h *Handler) createCommand(c *gin.Context) {
 		return
 	}
 
+	reqID := requestID(c)
 	cmd := repository.Command{
 		ID:        uuid.New().String(),
 		AgentName: req.NodeName,
@@ -210,28 +220,32 @@ func (h *Handler) createCommand(c *gin.Context) {
 		Status:    "pending",
 	}
 	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
-		slog.Error("create command failed", "error", err)
+		slog.Error("create command failed", "error", err, "request_id", reqID)
 		c.JSON(http.StatusInternalServerError, errInternal("failed to create command"))
 		return
 	}
 
+	slog.Debug("command created", "command_id", cmd.ID, "type", req.Type, "node", req.NodeName, "request_id", reqID)
+
 	if h.sender != nil {
 		if err := h.sender.SendCommand(req.NodeName, cmd.ID, cmd.Type, cmd.Payload); err != nil {
-			slog.Info("agent not connected, command queued", "node", req.NodeName, "id", cmd.ID)
+			slog.Info("agent not connected, command queued", "node", req.NodeName, "id", cmd.ID, "request_id", reqID)
 		}
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"command_id": cmd.ID,
 		"status":     "pending",
+		"request_id": reqID,
 	})
 }
 
 func (h *Handler) getCommand(c *gin.Context) {
 	id := c.Param("id")
+	reqID := requestID(c)
 	cmd, err := h.repo.GetCommand(c.Request.Context(), id)
 	if err != nil {
-		slog.Error("get command failed", "id", id, "error", err)
+		slog.Error("get command failed", "id", id, "error", err, "request_id", reqID)
 		c.JSON(http.StatusInternalServerError, errInternal("failed to get command"))
 		return
 	}
@@ -248,6 +262,7 @@ func (h *Handler) getCommand(c *gin.Context) {
 
 // sendAgentCommand creates a command for the given agent, sends it immediately if possible, and returns 202.
 func (h *Handler) sendAgentCommand(c *gin.Context, agentName, cmdType string, payload json.RawMessage) {
+	reqID := requestID(c)
 	cmd := repository.Command{
 		ID:        uuid.New().String(),
 		AgentName: agentName,
@@ -256,20 +271,23 @@ func (h *Handler) sendAgentCommand(c *gin.Context, agentName, cmdType string, pa
 		Status:    "pending",
 	}
 	if err := h.repo.CreateCommand(c.Request.Context(), cmd); err != nil {
-		slog.Error("create command failed", "error", err)
+		slog.Error("create command failed", "error", err, "request_id", reqID)
 		c.JSON(http.StatusInternalServerError, errInternal("failed to create command"))
 		return
 	}
 
+	slog.Debug("command created", "command_id", cmd.ID, "type", cmdType, "node", agentName, "request_id", reqID)
+
 	if h.sender != nil {
 		if err := h.sender.SendCommand(agentName, cmd.ID, cmd.Type, payload); err != nil {
-			slog.Info("agent not connected, command queued", "node", agentName, "id", cmd.ID)
+			slog.Info("agent not connected, command queued", "node", agentName, "id", cmd.ID, "request_id", reqID)
 		}
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"command_id": cmd.ID,
 		"status":     "pending",
+		"request_id": reqID,
 	})
 }
 

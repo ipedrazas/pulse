@@ -1,7 +1,9 @@
 package config
 
 import (
+	"log/slog"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -14,6 +16,7 @@ type Config struct {
 	TLSCA          string
 	WebhookURL     string
 	StaleThreshold time.Duration
+	LogLevel       slog.Level
 }
 
 func Load() Config {
@@ -26,6 +29,20 @@ func Load() Config {
 		TLSCA:          os.Getenv("PULSE_TLS_CA"),
 		WebhookURL:     os.Getenv("PULSE_WEBHOOK_URL"),
 		StaleThreshold: parseDuration("PULSE_STALE_THRESHOLD", 5*time.Minute),
+		LogLevel:       parseLogLevel(envOr("PULSE_LOG_LEVEL", "info")),
+	}
+}
+
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
 	}
 }
 

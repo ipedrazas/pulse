@@ -8,12 +8,12 @@ use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    // Log level: RUST_LOG takes precedence, then PULSE_LOG_LEVEL, then default "info"
+    let log_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        let level = std::env::var("PULSE_LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
+        tracing_subscriber::EnvFilter::new(level)
+    });
+    tracing_subscriber::fmt().with_env_filter(log_filter).init();
 
     let cfg = config::Config::from_env();
     info!(
@@ -107,8 +107,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let exec = Arc::clone(&exec);
                             let tx = outbound_tx.clone();
                             tokio::spawn(async move {
-                                info!("executing command {}", cmd.command_id);
+                                info!(command_id = %cmd.command_id, "executing command");
                                 let result = exec.execute(&cmd).await;
+                                info!(command_id = %result.command_id, success = result.success, duration_ms = result.duration_ms, "command completed");
                                 let msg = AgentMessage {
                                     payload: Some(agent_message::Payload::CommandResult(result)),
                                 };

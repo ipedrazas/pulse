@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ipedrazas/pulse/api/internal/alerts"
+	"github.com/ipedrazas/pulse/api/internal/metrics"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	pulsev1 "github.com/ipedrazas/pulse/proto/gen/pulse/v1"
 	"google.golang.org/grpc/codes"
@@ -86,6 +87,7 @@ func (s *AgentService) disconnectAgent(ctx context.Context, nodeName string) {
 	slog.Info("agent disconnected", "node", nodeName)
 	_ = s.repo.SetAgentStatus(ctx, nodeName, "offline")
 	s.streams.Remove(nodeName)
+	metrics.ConnectedAgents.Dec()
 	s.notifier.AgentOffline(nodeName)
 }
 
@@ -120,6 +122,7 @@ func (s *AgentService) handleHeartbeat(
 	s.streams.Set(nodeName, stream)
 	if firstHeartbeat {
 		slog.Info("agent connected", "node", nodeName)
+		metrics.ConnectedAgents.Inc()
 		s.notifier.AgentOnline(nodeName)
 	}
 	s.flushPendingCommands(stream, nodeName)
@@ -170,6 +173,8 @@ func (s *AgentService) handleContainerReport(ctx context.Context, report *pulsev
 	})
 	if err != nil {
 		slog.Error("handle container report failed", "node", nodeName, "error", err)
+	} else {
+		metrics.ContainersTracked.Set(float64(len(report.Containers)))
 	}
 	return nodeName
 }
@@ -179,6 +184,12 @@ func (s *AgentService) handleCommandResult(ctx context.Context, result *pulsev1.
 	if result.Error != "" {
 		output = result.Error
 	}
+	status := "failed"
+	if result.Success {
+		status = "completed"
+	}
+	slog.Debug("command result received", "command_id", result.CommandId, "node", result.NodeName, "success", result.Success)
+	metrics.CommandsTotal.WithLabelValues("result", status).Inc()
 	if err := s.repo.CompleteCommand(ctx, result.CommandId, output, result.Success); err != nil {
 		slog.Error("complete command failed", "id", result.CommandId, "error", err)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/ipedrazas/pulse/api/internal/config"
 	"github.com/ipedrazas/pulse/api/internal/db"
 	"github.com/ipedrazas/pulse/api/internal/grpcserver"
+	"github.com/ipedrazas/pulse/api/internal/metrics"
 	"github.com/ipedrazas/pulse/api/internal/repository"
 	"github.com/ipedrazas/pulse/api/internal/rest"
 	"github.com/ipedrazas/pulse/api/internal/version"
@@ -25,12 +26,14 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	cfg := config.Load()
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: cfg.LogLevel,
+	}))
 	slog.SetDefault(logger)
 
-	slog.Info("pulse-api starting", "version", version.Version, "commit", version.Commit)
-
-	cfg := config.Load()
+	slog.Info("pulse-api starting", "version", version.Version, "commit", version.Commit, "log_level", cfg.LogLevel.String())
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -78,15 +81,21 @@ func main() {
 		}
 	}()
 
+	// Prometheus metrics
+	metrics.Register()
+
 	// REST server
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(rest.CORSMiddleware())
+	router.Use(rest.RequestIDMiddleware())
+	router.Use(rest.MetricsMiddleware())
 	router.Use(rest.LoggingMiddleware())
 
 	handler := rest.NewHandler(repo, agentSvc)
 	handler.Register(router)
+	router.GET("/metrics", metrics.Handler())
 
 	httpSrv := &http.Server{
 		Addr:    cfg.RESTAddr,
