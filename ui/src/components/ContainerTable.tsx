@@ -109,11 +109,46 @@ export function ContainerTable({ containers, search }: ContainerTableProps) {
         {/* Fixed-layout header */}
         <div className="bg-gray-900">
           <div className="flex" role="row">
-            <SortHeader label="Name" field="name" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="25%" />
-            <SortHeader label="Image" field="image" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="35%" />
-            <SortHeader label="Status" field="status" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="12%" />
-            <SortHeader label="Node" field="agent_name" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="18%" />
-            <SortHeader label="Uptime" field="uptime_seconds" sortKey={sortKey} sortAsc={sortAsc} onSort={handleSort} width="10%" />
+            <SortHeader
+              label="Name"
+              field="name"
+              sortKey={sortKey}
+              sortAsc={sortAsc}
+              onSort={handleSort}
+              width="25%"
+            />
+            <SortHeader
+              label="Image"
+              field="image"
+              sortKey={sortKey}
+              sortAsc={sortAsc}
+              onSort={handleSort}
+              width="35%"
+            />
+            <SortHeader
+              label="Status"
+              field="status"
+              sortKey={sortKey}
+              sortAsc={sortAsc}
+              onSort={handleSort}
+              width="12%"
+            />
+            <SortHeader
+              label="Node"
+              field="agent_name"
+              sortKey={sortKey}
+              sortAsc={sortAsc}
+              onSort={handleSort}
+              width="18%"
+            />
+            <SortHeader
+              label="Uptime"
+              field="uptime_seconds"
+              sortKey={sortKey}
+              sortAsc={sortAsc}
+              onSort={handleSort}
+              width="10%"
+            />
           </div>
         </div>
 
@@ -141,12 +176,30 @@ export function ContainerTable({ containers, search }: ContainerTableProps) {
                     aria-expanded={isExpanded}
                     role="row"
                   >
-                    <div className="px-4 py-3 text-sm text-white truncate" style={{ width: '25%' }} title={c.name}>{c.name}</div>
-                    <div className="px-4 py-3 text-sm text-gray-300 font-mono truncate" style={{ width: '35%' }} title={c.image}>{c.image}</div>
+                    <div
+                      className="px-4 py-3 text-sm text-white truncate"
+                      style={{ width: '25%' }}
+                      title={c.name}
+                    >
+                      {c.name}
+                    </div>
+                    <div
+                      className="px-4 py-3 text-sm text-gray-300 font-mono truncate"
+                      style={{ width: '35%' }}
+                      title={c.image}
+                    >
+                      {c.image}
+                    </div>
                     <div className="px-4 py-3" style={{ width: '12%' }}>
                       <StatusBadge status={c.status} />
                     </div>
-                    <div className="px-4 py-3 text-sm text-gray-400 truncate" style={{ width: '18%' }} title={c.agent_name}>{c.agent_name}</div>
+                    <div
+                      className="px-4 py-3 text-sm text-gray-400 truncate"
+                      style={{ width: '18%' }}
+                      title={c.agent_name}
+                    >
+                      {c.agent_name}
+                    </div>
                     <div className="px-4 py-3 text-sm text-gray-400" style={{ width: '10%' }}>
                       {formatUptime(c.uptime_seconds)}
                     </div>

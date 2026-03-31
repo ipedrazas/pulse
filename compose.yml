@@ -16,6 +16,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    labels:
+      pulse.proxy: false
 
   api:
     build:
@@ -32,6 +34,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    labels:
+      pulse.port: 8080
+      pulse.subdomain: pulse-api
 
   # agent:
   #   build:
@@ -56,6 +61,9 @@ services:
       - "3000:80"
     depends_on:
       - api
+    labels:
+      pulse.port: 80
+      pulse.subdomain: pulse-ui
 
 volumes:
   pgdata:
