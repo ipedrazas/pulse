@@ -53,3 +53,4 @@ certs/*.key
 # .idea/
 # .vscode/
 wip/
+.superset/
