@@ -44,9 +44,15 @@ func (m *mockRepo) GetContainer(_ context.Context, _, _ string) (*repository.Con
 func (m *mockRepo) ListContainers(_ context.Context, _ string, _, _ int) ([]repository.Container, int, error) {
 	return m.containers, m.total, m.err
 }
+func (m *mockRepo) ListContainersAt(_ context.Context, _ string, _ time.Time) ([]repository.Container, error) {
+	return m.containers, m.err
+}
 func (m *mockRepo) MarkContainersRemoved(_ context.Context, _ string, _ []string) error { return m.err }
 func (m *mockRepo) InsertContainerEvent(_ context.Context, _ repository.ContainerEvent) error {
 	return m.err
+}
+func (m *mockRepo) ListContainerEvents(_ context.Context, _ string, _ time.Time) ([]repository.ContainerEvent, error) {
+	return nil, m.err
 }
 func (m *mockRepo) CreateCommand(_ context.Context, _ repository.Command) error { return m.err }
 func (m *mockRepo) GetCommand(_ context.Context, _ string) (*repository.Command, error) {

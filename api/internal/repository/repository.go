@@ -24,10 +24,12 @@ type Repository interface {
 	UpsertContainer(ctx context.Context, c Container) error
 	GetContainer(ctx context.Context, containerID, agentName string) (*Container, error)
 	ListContainers(ctx context.Context, agentName string, limit, offset int) ([]Container, int, error)
+	ListContainersAt(ctx context.Context, agentName string, at time.Time) ([]Container, error)
 	MarkContainersRemoved(ctx context.Context, agentName string, activeIDs []string) error
 
 	// Container Events
 	InsertContainerEvent(ctx context.Context, event ContainerEvent) error
+	ListContainerEvents(ctx context.Context, agentName string, since time.Time) ([]ContainerEvent, error)
 
 	// Commands
 	CreateCommand(ctx context.Context, cmd Command) error

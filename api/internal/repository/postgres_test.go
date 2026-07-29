@@ -164,6 +164,97 @@ func TestContainerCRUD(t *testing.T) {
 	assert.Equal(t, 0, total) // removed containers excluded
 }
 
+func TestListContainersAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	repo, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now()
+
+	err := repo.UpsertAgent(ctx, repository.Agent{
+		Name: "node-1", Status: "online", Version: "0.1.0", LastSeen: &now,
+	})
+	require.NoError(t, err)
+
+	err = repo.UpsertContainer(ctx, repository.Container{
+		ContainerID: "web-1", AgentName: "node-1", Name: "web", Image: "nginx:latest",
+		Status: "running", EnvVars: map[string]string{}, Labels: map[string]string{},
+	})
+	require.NoError(t, err)
+
+	time.Sleep(50 * time.Millisecond)
+	checkpoint := time.Now()
+	time.Sleep(50 * time.Millisecond)
+
+	err = repo.UpsertContainer(ctx, repository.Container{
+		ContainerID: "db-1", AgentName: "node-1", Name: "db", Image: "postgres:17",
+		Status: "running", EnvVars: map[string]string{}, Labels: map[string]string{},
+	})
+	require.NoError(t, err)
+
+	// At the checkpoint, only "web" existed.
+	before, err := repo.ListContainersAt(ctx, "node-1", checkpoint)
+	require.NoError(t, err)
+	require.Len(t, before, 1)
+	assert.Equal(t, "web", before[0].Name)
+
+	time.Sleep(50 * time.Millisecond)
+	err = repo.MarkContainersRemoved(ctx, "node-1", []string{"db-1"}) // removes "web"
+	require.NoError(t, err)
+	checkpointAfterRemoval := time.Now()
+
+	// "web" was removed after the checkpoint, so it was still alive then.
+	before, err = repo.ListContainersAt(ctx, "node-1", checkpoint)
+	require.NoError(t, err)
+	require.Len(t, before, 1)
+	assert.Equal(t, "web", before[0].Name)
+
+	// By checkpointAfterRemoval, "web" is gone and "db" is alive.
+	after, err := repo.ListContainersAt(ctx, "node-1", checkpointAfterRemoval)
+	require.NoError(t, err)
+	require.Len(t, after, 1)
+	assert.Equal(t, "db", after[0].Name)
+}
+
+func TestListContainerEvents(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	repo, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now()
+
+	err := repo.UpsertAgent(ctx, repository.Agent{
+		Name: "node-1", Status: "online", Version: "0.1.0", LastSeen: &now,
+	})
+	require.NoError(t, err)
+
+	old := repository.ContainerEvent{
+		Time: now.Add(-time.Hour), ContainerID: "web-1", AgentName: "node-1",
+		Status: "running", UptimeSeconds: 100,
+	}
+	require.NoError(t, repo.InsertContainerEvent(ctx, old))
+
+	since := now.Add(-10 * time.Minute)
+	recent := repository.ContainerEvent{
+		Time: now, ContainerID: "web-1", AgentName: "node-1",
+		Status: "running", UptimeSeconds: 700,
+	}
+	require.NoError(t, repo.InsertContainerEvent(ctx, recent))
+
+	events, err := repo.ListContainerEvents(ctx, "node-1", since)
+	require.NoError(t, err)
+	require.Len(t, events, 1) // the event older than "since" is excluded
+	assert.Equal(t, int64(700), events[0].UptimeSeconds)
+}
+
 func TestContainerEvents(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

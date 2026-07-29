@@ -8,7 +8,8 @@ import (
 )
 
 type Config struct {
-	APIAddr string `yaml:"api-addr"`
+	APIAddr     string `yaml:"api-addr"`
+	DefaultNode string `yaml:"default-node"`
 }
 
 // Load reads config from ~/.pulse/config.yaml. Missing file is not an error.

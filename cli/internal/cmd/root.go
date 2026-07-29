@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	apiAddr string
-	output  string
-	verbose bool
+	apiAddr     string
+	output      string
+	verbose     bool
+	defaultNode string
 )
 
 func NewRootCmd() *cobra.Command {
@@ -21,6 +22,7 @@ func NewRootCmd() *cobra.Command {
 		Short: "Pulse — distributed container management CLI",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			resolveAPIAddr(cmd)
+			resolveDefaultNode()
 
 			if verbose {
 				slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
@@ -42,6 +44,8 @@ func NewRootCmd() *cobra.Command {
 		newUpCmd(),
 		newLogsCmd(),
 		newSendCmd(),
+		newStatsCmd(),
+		newDiffCmd(),
 		newVersionCmd(),
 		newCompletionCmd(),
 	)
@@ -71,6 +75,16 @@ func resolveAPIAddr(cmd *cobra.Command) {
 
 	// Default.
 	apiAddr = "localhost:9090"
+}
+
+// resolveDefaultNode applies config precedence for the default node used by
+// commands whose --node flag is omitted: env > config file > unset.
+func resolveDefaultNode() {
+	if v := os.Getenv("PULSE_DEFAULT_NODE"); v != "" {
+		defaultNode = v
+		return
+	}
+	defaultNode = config.Load().DefaultNode
 }
 
 // debugf logs a debug message when verbose mode is enabled.

@@ -37,6 +37,18 @@ func TestLoad_EmptyFile(t *testing.T) {
 	}
 }
 
+func TestLoad_DefaultNode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("default-node: worker-1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c := LoadFrom(path)
+	if c.DefaultNode != "worker-1" {
+		t.Errorf("DefaultNode = %q, want worker-1", c.DefaultNode)
+	}
+}
+
 func TestLoad_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
