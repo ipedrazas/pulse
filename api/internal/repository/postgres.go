@@ -281,6 +281,47 @@ func (r *PostgresRepository) ListContainers(ctx context.Context, agentName strin
 	return containers, total, rows.Err()
 }
 
+// ListContainersAt returns the containers that were alive on agentName at
+// the given point in time: first observed at or before "at", and not yet
+// removed (or removed after "at").
+func (r *PostgresRepository) ListContainersAt(ctx context.Context, agentName string, at time.Time) ([]Container, error) {
+	rows, err := r.q.Query(ctx, `
+		SELECT container_id, agent_name, name, image, status, env_vars, mounts, labels, ports,
+			compose_project, command, uptime_seconds, created_at, removed_at
+		FROM containers
+		WHERE agent_name = $1 AND created_at <= $2 AND (removed_at IS NULL OR removed_at > $2)
+		ORDER BY name`, agentName, at)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var containers []Container
+	for rows.Next() {
+		var c Container
+		var envJSON, mountsJSON, labelsJSON, portsJSON []byte
+		if err := rows.Scan(&c.ContainerID, &c.AgentName, &c.Name, &c.Image, &c.Status,
+			&envJSON, &mountsJSON, &labelsJSON, &portsJSON,
+			&c.ComposeProject, &c.Command, &c.UptimeSeconds, &c.CreatedAt, &c.RemovedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(envJSON, &c.EnvVars); err != nil {
+			return nil, fmt.Errorf("unmarshal env_vars: %w", err)
+		}
+		if err := json.Unmarshal(mountsJSON, &c.Mounts); err != nil {
+			return nil, fmt.Errorf("unmarshal mounts: %w", err)
+		}
+		if err := json.Unmarshal(labelsJSON, &c.Labels); err != nil {
+			return nil, fmt.Errorf("unmarshal labels: %w", err)
+		}
+		if err := json.Unmarshal(portsJSON, &c.Ports); err != nil {
+			return nil, fmt.Errorf("unmarshal ports: %w", err)
+		}
+		containers = append(containers, c)
+	}
+	return containers, rows.Err()
+}
+
 func (r *PostgresRepository) MarkContainersRemoved(ctx context.Context, agentName string, activeIDs []string) error {
 	_, err := r.q.Exec(ctx, `
 		UPDATE containers SET removed_at = NOW()
@@ -297,6 +338,31 @@ func (r *PostgresRepository) InsertContainerEvent(ctx context.Context, e Contain
 		VALUES ($1, $2, $3, $4, $5)`,
 		e.Time, e.ContainerID, e.AgentName, e.Status, e.UptimeSeconds)
 	return err
+}
+
+// ListContainerEvents returns events for agentName recorded at or after
+// since, ordered by container then time so callers can scan consecutive
+// samples per container.
+func (r *PostgresRepository) ListContainerEvents(ctx context.Context, agentName string, since time.Time) ([]ContainerEvent, error) {
+	rows, err := r.q.Query(ctx, `
+		SELECT time, container_id, agent_name, status, uptime_seconds
+		FROM container_events
+		WHERE agent_name = $1 AND time >= $2
+		ORDER BY container_id, time`, agentName, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []ContainerEvent
+	for rows.Next() {
+		var e ContainerEvent
+		if err := rows.Scan(&e.Time, &e.ContainerID, &e.AgentName, &e.Status, &e.UptimeSeconds); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
 }
 
 // --- Commands ---

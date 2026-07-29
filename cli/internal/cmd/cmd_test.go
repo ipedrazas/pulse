@@ -238,6 +238,57 @@ func TestAPIAddr_ConfigFile(t *testing.T) {
 	}
 }
 
+// --- default node resolution ---
+
+func TestDefaultNode_Unset(t *testing.T) {
+	t.Setenv("PULSE_DEFAULT_NODE", "")
+
+	root := NewRootCmd()
+	root.SetArgs([]string{"version"})
+	root.SetOut(&bytes.Buffer{})
+	_ = root.Execute()
+
+	if defaultNode != "" {
+		t.Errorf("default defaultNode = %q, want empty", defaultNode)
+	}
+}
+
+func TestDefaultNode_EnvVar(t *testing.T) {
+	t.Setenv("PULSE_DEFAULT_NODE", "worker-1")
+
+	root := NewRootCmd()
+	root.SetArgs([]string{"version"})
+	root.SetOut(&bytes.Buffer{})
+	_ = root.Execute()
+
+	if defaultNode != "worker-1" {
+		t.Errorf("defaultNode = %q, want worker-1", defaultNode)
+	}
+}
+
+func TestDefaultNode_ConfigFile(t *testing.T) {
+	t.Setenv("PULSE_DEFAULT_NODE", "")
+
+	dir := t.TempDir()
+	pulseDir := filepath.Join(dir, ".pulse")
+	if err := os.MkdirAll(pulseDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pulseDir, "config.yaml"), []byte("default-node: from-file\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", dir)
+
+	root := NewRootCmd()
+	root.SetArgs([]string{"version"})
+	root.SetOut(&bytes.Buffer{})
+	_ = root.Execute()
+
+	if defaultNode != "from-file" {
+		t.Errorf("defaultNode = %q, want from-file", defaultNode)
+	}
+}
+
 // --- verbose flag ---
 
 func TestVerboseFlag_Accepted(t *testing.T) {

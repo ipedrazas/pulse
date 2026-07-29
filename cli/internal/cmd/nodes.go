@@ -125,3 +125,28 @@ func newNodesRmCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&yes, "yes", false, "Skip confirmation prompt")
 	return cmd
 }
+
+// resolveNode returns the node to target for a command: the explicit
+// flagValue if set, else the configured default node, else the sole
+// registered node if there is exactly one.
+func resolveNode(ctx context.Context, client pulsev1.CLIServiceClient, flagValue string) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
+	}
+	if defaultNode != "" {
+		return defaultNode, nil
+	}
+
+	resp, err := client.ListNodes(ctx, &pulsev1.ListNodesRequest{})
+	if err != nil {
+		return "", fmt.Errorf("list nodes: %w", err)
+	}
+	switch len(resp.Nodes) {
+	case 0:
+		return "", fmt.Errorf("--node is required: no nodes are registered")
+	case 1:
+		return resp.Nodes[0].Name, nil
+	default:
+		return "", fmt.Errorf("--node is required: multiple nodes registered and no default node configured (set default-node in ~/.pulse/config.yaml or PULSE_DEFAULT_NODE)")
+	}
+}
