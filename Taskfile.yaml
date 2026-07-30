@@ -297,3 +297,11 @@ tasks:
       - task cli:fmt
       - task agent:fmt
       - task ui:fmt
+
+  ci:
+    desc: Run fmt, lint, test, and build in sequence (fail-fast)
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test
+      - task: build
